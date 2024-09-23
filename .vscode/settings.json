@@ -225,5 +225,6 @@
         "filesystem": "cpp",
         "execution": "cpp"
     },
-    "C_Cpp.errorSquiggles": "disabled"
+    "C_Cpp.errorSquiggles": "disabled",
+    "python.analysis.autoImportCompletions": false
 }

@@ -2,10 +2,11 @@
 import os
 import sys
 
-# Add the 'build' directory to sys.path in one line
-sys.path.append(
-    os.path.normpath(os.path.join(os.path.dirname(__file__), "..", "build"))
-)
+# # Add the 'build' directory to sys.path in one line
+# sys.path.append(
+#     os.path.normpath(os.path.join(os.path.dirname(__file__), "..", "build"))
+# )
+os.chdir('/Users/zhanwenxin/Documents/GitHub/cuTAGI')
 from typing import Union, Optional
 
 import fire
@@ -57,7 +58,7 @@ def main(num_epochs: int = 30, batch_size: int = 1, sigma_v: float = 1):
 
     # Network
     net = Sequential(
-        LSTM(num_features, 30, input_seq_len),
+        LSTM(1, 30, input_seq_len),
         LSTM(30, 30, input_seq_len),
         Linear(30 * input_seq_len, 1),
     )
@@ -68,8 +69,7 @@ def main(num_epochs: int = 30, batch_size: int = 1, sigma_v: float = 1):
     hybrid = LSTM_SSM(
         neural_network = net,           # LSTM
         baseline = 'trend', # 'level', 'trend', 'acceleration', 'ETS'
-        # zB  = np.array([0.1, 1E-4]),    # initial mu for baseline hidden states
-        zB  = np.array([1, 1E-2]),    # initial mu for baseline hidden states
+        zB  = np.array([0.1, 1E-4]),    # initial mu for baseline hidden states
         SzB = np.array([1E-5, 1E-5])    # var
     )
 
@@ -123,16 +123,16 @@ def main(num_epochs: int = 30, batch_size: int = 1, sigma_v: float = 1):
         # Smoother
         hybrid.smoother()
 
-        # Figures for each epoch
-        mu_smoothed = np.array(hybrid.mu_smoothed)
-        plt.switch_backend('Agg')
-        plt.figure()
-        plt.plot(obs_unnorm, color='r')
-        plt.plot(mu_smoothed[:,0,:],color='k')
-        plt.plot(mu_preds_unnorm,color='b')
-        filename = f'saved_results/hq/hybrid_epoch_#{epoch}.png'
-        plt.savefig(filename)
-        plt.close()  # Close the plot to free up memory
+        # # Figures for each epoch
+        # mu_smoothed = np.array(hybrid.mu_smoothed)
+        # plt.switch_backend('Agg')
+        # plt.figure()
+        # plt.plot(obs_unnorm, color='r')
+        # plt.plot(mu_smoothed[:,0,:],color='k')
+        # plt.plot(mu_preds_unnorm,color='b')
+        # filename = f'saved_results/hq/hybrid_epoch_#{epoch}.png'
+        # plt.savefig(filename)
+        # plt.close()  # Close the plot to free up memory
 
         # Progress bar
         pbar.set_description(
@@ -196,15 +196,15 @@ def main(num_epochs: int = 30, batch_size: int = 1, sigma_v: float = 1):
     std_preds_unnorm_test = std_preds_unnorm_test.flatten()
 
     # figure for final test predictions
-    plt.figure()
-    plt.plot(idx,obs, color='r',label=r"data")
-    plt.plot(idx_test, mu_preds_unnorm_test, color='b',label=r"test prediction")
-    plt.fill_between(idx_test, mu_preds_unnorm_test - std_preds_unnorm_test, mu_preds_unnorm_test + std_preds_unnorm_test, color='blue', alpha=0.3, label='±1 SD')
-    plt.plot(idx_train,mu_smoothed[:,0,:],color='k',label=r"level")
-    plt.plot(idx_train, mu_preds_unnorm,color='g', label=r"train prediction")
-    filename = f'saved_results/hq/test_prediction.png'
-    plt.savefig(filename)
-    plt.close()  # Close the plot to free up memory
+    # plt.figure()
+    # plt.plot(idx,obs, color='r',label=r"data")
+    # plt.plot(idx_test, mu_preds_unnorm_test, color='b',label=r"test prediction")
+    # plt.fill_between(idx_test, mu_preds_unnorm_test - std_preds_unnorm_test, mu_preds_unnorm_test + std_preds_unnorm_test, color='blue', alpha=0.3, label='±1 SD')
+    # plt.plot(idx_train,mu_smoothed[:,0,:],color='k',label=r"level")
+    # plt.plot(idx_train, mu_preds_unnorm,color='g', label=r"train prediction")
+    # filename = f'saved_results/hq/test_prediction.png'
+    # plt.savefig(filename)
+    # plt.close()  # Close the plot to free up memory
 
     print("#############")
     print(f"MSE           : {mse: 0.2f}")

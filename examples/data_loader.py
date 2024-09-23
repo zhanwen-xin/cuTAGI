@@ -358,13 +358,13 @@ class TimeSeriesDataloader:
         # Load data
         x = self.load_data_from_csv(self.x_file)
 
-        # Add anomaly
-        if self.add_anomaly:
-            for i in range(self.anomaly_start, x.shape[0]):
-                x[i] += self.anomaly_magnitude * (i - self.anomaly_start)
+        # # Add anomaly
+        # if self.add_anomaly:
+        #     for i in range(self.anomaly_start, x.shape[0]):
+        #         x[i] += self.anomaly_magnitude * (i - self.anomaly_start)
 
-        # Remove all the columns except the first one, no explanatory variable is used
-        x = x[:, 0].reshape(-1, 1)
+        # # Remove all the columns except the first one, no explanatory variable is used
+        # x = x[:, 0].reshape(-1, 1)
 
         if self.ts_idx is not None:
             x = x[:,self.ts_idx:self.ts_idx+1]   # choose time series column
