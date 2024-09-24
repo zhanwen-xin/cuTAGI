@@ -6,40 +6,23 @@ from pytagi.nn import (
     ReLU,
     Sequential,
 )
+import numpy as np
 
 MODEL_1 = Sequential(
-    Conv2d(3, 32, 5, bias=False, padding=2, in_width=32, in_height=32),
-    BatchNorm2d(32),
-    ReLU(),
-    AvgPool2d(3, 2, padding=1, padding_type=2),
-    BatchNorm2d(32),
-    ReLU(),
-    AvgPool2d(3, 2, padding=1, padding_type=2),
-    Conv2d(32, 64, 5, bias=False, padding=2),
-    BatchNorm2d(64),
-    ReLU(),
-    AvgPool2d(3, 2, padding=1, padding_type=2),
-    Linear(64 * 4 * 4, 256),
-    ReLU(),
-    Linear(256, 11),
-)
+                    Linear(16, 128),
+                    ReLU(),
+                    Linear(128, 128),
+                    ReLU(),
+                    Linear(128, 2),
+                    )
 
 MODEL_2 = Sequential(
-    Conv2d(3, 32, 5, bias=False, padding=2, in_width=32, in_height=32),
-    BatchNorm2d(32),
-    ReLU(),
-    AvgPool2d(3, 2, padding=1, padding_type=2),
-    BatchNorm2d(32),
-    ReLU(),
-    AvgPool2d(3, 2, padding=1, padding_type=2),
-    Conv2d(32, 64, 5, bias=False, padding=2),
-    BatchNorm2d(64),
-    ReLU(),
-    AvgPool2d(3, 2, padding=1, padding_type=2),
-    Linear(64 * 4 * 4, 256),
-    ReLU(),
-    Linear(256, 11),
-)
+                    Linear(16, 128),
+                    ReLU(),
+                    Linear(128, 128),
+                    ReLU(),
+                    Linear(128, 2),
+                    )
 
 
 def test_load_state_dict():
@@ -84,16 +67,38 @@ def test_parameters():
     params_1 = model_1.parameters()
     params_2 = model_2.parameters()
 
-    # Soft update
-    tau = 0.0
-    for param_1, param_2 in zip(params_1, params_2):
-        for i in range(len(param_1)):
-            param_1[i] = param_1[i] * tau + (1 - tau) * param_2[i]
+    net_state_dict = model_1.get_state_dict()
+    for key in net_state_dict:
+        print(key)
+        for key2 in net_state_dict[key]:
+            print(key2)
+            print(type(net_state_dict[key][key2]))
+        print('=========')
 
-    ## This test is only valid for tau = 0.0
-    assert all(
-        (param_1 == param_2).all() for param_1, param_2 in zip(params_1, params_2)
-    )
+    # # Soft update method 1
+    # tau = 0.0
+    # for param_1, param_2 in zip(params_1, params_2):
+    #     for i in range(len(param_1)):
+    #         param_1[i] = param_1[i] * tau + (1 - tau) * param_2[i]
+
+    # ## This test is only valid for tau = 0.0
+    # assert all(
+    #     (param_1 == param_2).all() for param_1, param_2 in zip(params_1, params_2)
+    # )
+
+
+    # Soft update method 2
+    TAU = 0.0
+    target_net_state_dict = model_1.get_state_dict()
+    policy_net_state_dict = model_2.get_state_dict()
+    for key in policy_net_state_dict:
+        for key2 in policy_net_state_dict[key]:
+            target_net_state_dict[key][key2] = (np.asarray(policy_net_state_dict[key][key2])*TAU +
+                                                np.asarray(target_net_state_dict[key][key2])*(1-TAU)).tolist()
+
+    for key in policy_net_state_dict:
+        for key2 in policy_net_state_dict[key]:
+                assert(policy_net_state_dict[key][key2] == target_net_state_dict[key][key2])
 
     print("PARAMETERS TEST PASSED.")
 
