@@ -2,11 +2,11 @@
 import os
 import sys
 
-# # Add the 'build' directory to sys.path in one line
-# sys.path.append(
-#     os.path.normpath(os.path.join(os.path.dirname(__file__), "..", "build"))
-# )
-os.chdir('/Users/zhanwenxin/Documents/GitHub/cuTAGI')
+# Add the 'build' directory to sys.path in one line
+sys.path.append(
+    os.path.normpath(os.path.join(os.path.dirname(__file__), "..", "build"))
+)
+# os.chdir('/Users/zhanwenxin/Documents/GitHub/cuTAGI')
 from typing import Union, Optional
 
 import fire
