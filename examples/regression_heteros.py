@@ -32,7 +32,7 @@ def main(num_epochs: int = 50, batch_size: int = 10):
     # Viz
     viz = PredictionViz(task_name="heteros regression", data_name="1d_toy_noise")
 
-    cuda = True
+    cuda = False
     net = Sequential(
         Linear(1, 128), ReLU(), Linear(128, 128), ReLU(), Linear(128, 2), EvenExp()
     )
@@ -57,6 +57,7 @@ def main(num_epochs: int = 50, batch_size: int = 10):
             out_updater.update_heteros(
                 output_states=net.output_z_buffer,
                 mu_obs=y,
+                var_obs=np.zeros_like(y),
                 delta_states=net.input_delta_z_buffer,
             )
 

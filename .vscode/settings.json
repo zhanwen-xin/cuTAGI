@@ -223,7 +223,9 @@
         "stacktrace": "cpp",
         "__string": "cpp",
         "filesystem": "cpp",
-        "execution": "cpp"
+        "execution": "cpp",
+        "__bits": "cpp",
+        "__tuple": "cpp"
     },
     "C_Cpp.errorSquiggles": "disabled",
     "python.analysis.autoImportCompletions": false
