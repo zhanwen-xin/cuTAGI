@@ -57,7 +57,7 @@ class ReplayMemory(object):
     def __len__(self):
         return len(self.memory)
 
-class regime_change_detection_tagi():
+class regime_change_detection_tagiV():
     def __init__(self, **kwargs):
         self.trained_BDLM = kwargs.get('trained_BDLM', None)
         self.val_datetime_values = kwargs.get('val_datetime_values', None)
@@ -98,7 +98,6 @@ class regime_change_detection_tagi():
         self.episode_rewards = []
         self.episode_f1t = []
         self.GAMMA = 0.99
-        self.sigma_v = 1.0
 
     def generate_synthetic_ts(self, num_syn_ts, syn_ts_len, plot = True):
         self.syn_ts_all = []
@@ -309,16 +308,25 @@ class regime_change_detection_tagi():
             dummy_steps = 0
             Q_values_all = []
             Q_var_all = []
+            Q_var_epstic_all = []
             for t in count():
                 action = self._select_action(state)
 
                 observation, reward, terminated, truncated, info = env.step(action.item(), cost_intervention=self.cost_intervention)
 
-                Q_values_t, var_Q = self._track_Qvalues(state)
+                Q_values_t, var_Q, epist_var_Q, alea_var_Q = self._track_Qvalues(state)
+                # print('epistemic', epist_var_Q)
+                # print('aleatoric', alea_var_Q)
+                # print('---------------------------------')
+                if np.isnan(Q_values_t).any():
+                    print('Code breaks, Q is nan')
+                    1/0
                 Q_values_t = Q_values_t[0].tolist()
                 var_Q = var_Q[0].tolist()
+                epist_var_Q = epist_var_Q[0].tolist()
                 Q_values_all.append(Q_values_t)
                 Q_var_all.append(var_Q)
+                Q_var_epstic_all.append(epist_var_Q)
 
                 dummy_steps += 1
 
@@ -367,6 +375,8 @@ class regime_change_detection_tagi():
             Q_values_all = np.array(Q_values_all).T
             Q_var_all = [[np.nan, np.nan]] * 65 + Q_var_all
             Q_var_all = np.array(Q_var_all).T
+            Q_var_epstic_all = [[np.nan, np.nan]] * 65 + Q_var_epstic_all
+            Q_var_epstic_all = np.array(Q_var_epstic_all).T
 
             print(track_intervention_taken_times)
             print(self.episode_f1t)
@@ -428,6 +438,10 @@ class regime_change_detection_tagi():
                                         Q_values_all[0] + np.sqrt(Q_var_all[0]), color='gray', alpha=0.2)
                     ax4.fill_between(timesteps, Q_values_all[1] - np.sqrt(Q_var_all[1]),\
                                         Q_values_all[1] + np.sqrt(Q_var_all[1]), color='gray', alpha=0.2)
+                    ax4.fill_between(timesteps, Q_values_all[0] - np.sqrt(Q_var_epstic_all[0]),\
+                                        Q_values_all[0] + np.sqrt(Q_var_epstic_all[0]), color='green', alpha=0.2)
+                    ax4.fill_between(timesteps, Q_values_all[1] - np.sqrt(Q_var_epstic_all[1]),\
+                                        Q_values_all[1] + np.sqrt(Q_var_epstic_all[1]), color='green', alpha=0.2)
                     ax4.set_ylabel('Q_values')
                     ax4.set_xlim(ax0.get_xlim())
                     ax4.legend(loc='upper left')
@@ -603,6 +617,7 @@ class regime_change_detection_tagi():
         RL_step_taken = 0
         Q_values_all = []
         Q_var_all = []
+        Q_var_epstic_all = []
         for t in count():
             state = torch.tensor(state['hidden_states'],\
                                 dtype=torch.float32, device='cpu').unsqueeze(0)
@@ -612,13 +627,17 @@ class regime_change_detection_tagi():
             # action = action.item()
 
             # Track Q values
-            state_np = state.numpy()
-            Q_values_t,Q_var_t = self.policy_net.net(state_np)
+            Q_values_t, Q_var_t, epist_var_Q, alea_var_Q  = self._track_Qvalues(state)
+            # print('epistemic', epist_var_Q)
+            # print('aleatoric', alea_var_Q)
+            # print('============================')
+            Q_values_t = Q_values_t[0].tolist()
+            Q_var_t = Q_var_t[0].tolist()
+            epist_var_Q = epist_var_Q[0].tolist()
             action = np.argmax(Q_values_t, axis=0)
-            Q_values_t = [Q_values_t][0].tolist()
-            Q_var_t = [Q_var_t][0].tolist()
             Q_values_all.append(Q_values_t)
             Q_var_all.append(Q_var_t)
+            Q_var_epstic_all.append(epist_var_Q)
 
             state, _, terminated, truncated, info = env.step(action, cost_intervention=self.cost_intervention)
 
@@ -636,6 +655,8 @@ class regime_change_detection_tagi():
         Q_values_all = np.array(Q_values_all).T
         Q_var_all = [[np.nan, np.nan]] * 65 + Q_var_all
         Q_var_all = np.array(Q_var_all).T
+        Q_var_epstic_all = [[np.nan, np.nan]] * 65 + Q_var_epstic_all
+        Q_var_epstic_all = np.array(Q_var_epstic_all).T
 
         # Plot prediction
         timesteps = np.arange(0, len(info['measurement_one_episode']), 1)
@@ -698,6 +719,10 @@ class regime_change_detection_tagi():
                             Q_values_all[0] + np.sqrt(Q_var_all[0]), color='gray', alpha=0.2)
         ax5.fill_between(timesteps, Q_values_all[1] - np.sqrt(Q_var_all[1]),\
                             Q_values_all[1] + np.sqrt(Q_var_all[1]), color='gray', alpha=0.2)
+        ax5.fill_between(timesteps, Q_values_all[0] - np.sqrt(Q_var_epstic_all[0]),\
+                            Q_values_all[0] + np.sqrt(Q_var_epstic_all[0]), color='green', alpha=0.2)
+        ax5.fill_between(timesteps, Q_values_all[1] - np.sqrt(Q_var_epstic_all[1]),\
+                            Q_values_all[1] + np.sqrt(Q_var_epstic_all[1]), color='green', alpha=0.2)
         ax5.set_ylabel('Q values')
         # set x axis to be the same as ax0
         ax5.set_xlim(ax0.get_xlim())
@@ -832,10 +857,6 @@ class regime_change_detection_tagi():
 
         self.policy_net.net.train()
         self.target_net.net.eval()
-        self.sigma_v = exponential_scheduler(curr_v = self.sigma_v,
-                                                    min_v=0.01,
-                                                    decaying_factor=0.999,
-                                                    curr_iter=self.steps_done)
         transitions = self.memory.sample(self.batchsize)
         batch = Transition(*zip(*transitions))
 
@@ -854,12 +875,37 @@ class regime_change_detection_tagi():
         next_state_batch = {'mu': next_state_mean_batch, 'var': np.zeros_like(next_state_mean_batch)}
 
         # Get the next state values from target net
-        next_state_values_mu, next_state_values_var = self.target_net.net(next_state_batch['mu'])
-        next_state_values_var += self.sigma_v**2
+        next_state_values_mu_f, next_state_values_var_f = self.target_net.net(next_state_batch['mu'])
 
         # Reshape to 2D
-        next_state_values_mu = next_state_values_mu.reshape(self.batchsize, self.target_net.n_actions)
-        next_state_values_var = next_state_values_var.reshape(self.batchsize, self.target_net.n_actions)
+        next_state_values_mu_f = next_state_values_mu_f.reshape(self.batchsize, self.target_net.n_actions*2)
+        next_state_values_var_f = next_state_values_var_f.reshape(self.batchsize, self.target_net.n_actions*2)
+
+        # DEBUG: Determine if there is nan value in next_state_values_var_f[:, [0, 2]]
+        break_code = False
+        if np.isnan(next_state_values_var_f[:, [0, 2]]).any():
+            print('There is nan value in next_state_values_var_f[:, [0, 2]]')
+            break_code = True
+
+        if np.isnan(next_state_values_mu_f[:, [1, 3]]).any():
+            print('There is nan value in next_state_values_mu_f[:, [1, 3]]')
+            break_code = True
+
+
+        if np.isnan(next_state_values_mu_f[:, [0, 2]]).any():
+            print('There is nan value in next_state_values_mu_f[:, [0, 2]]')
+            break_code = True
+
+        if np.isnan(next_state_values_var_f[:, [1, 3]]).any():
+            print('There is nan value in next_state_values_var_f[:, [1, 3]]')
+            break_code = True
+
+        if break_code:
+            1/0
+
+        # Along the first axis, select the first and the third columns of the 2D array next_state_values_mu
+        next_state_values_mu = next_state_values_mu_f[:, [0, 2]]
+        next_state_values_var = next_state_values_var_f[:, [0, 2]] + next_state_values_mu_f[:, [1, 3]]
 
         # Sample next state values from next_state_values_mu, next_state_values_var following Gaussian distribution
         next_state_values_samples = np.zeros((self.batchsize, self.target_net.n_actions))
@@ -884,19 +930,20 @@ class regime_change_detection_tagi():
         # Scale the reward so that the Q value is bounded between 0 and 1
         reward_batch = reward_batch * (1-self.GAMMA)/np.abs(self.mean_R + self.std_R)
         expected_state_values_mu = np.array((next_state_values_mu * self.GAMMA) + reward_batch)
-        expected_state_values_var = np.array((next_state_values_var * self.GAMMA))
+        expected_state_values_var = np.array((next_state_values_var * self.GAMMA**2))
 
         # Infer the policy network using the expected Q values
-        expected_state_action_values_mu, expected_state_action_values_var = self.policy_net.net(state_batch['mu'])
-        # expected_state_action_values_var += self.sigma_v**2
+        expected_state_action_values_mu_f, expected_state_action_values_var_f = self.policy_net.net(state_batch['mu'])
 
         # # Only change the expected Q values where actions are taken
-        expected_state_action_values_mu = expected_state_action_values_mu.reshape(self.batchsize, self.policy_net.n_actions)
-        expected_state_action_values_var = expected_state_action_values_var.reshape(self.batchsize, self.policy_net.n_actions)
+        expected_state_action_values_mu_f = expected_state_action_values_mu_f.reshape(self.batchsize, self.policy_net.n_actions*2)
+        expected_state_action_values_var_f = expected_state_action_values_var_f.reshape(self.batchsize, self.policy_net.n_actions*2)
+        expected_state_action_values_mu = expected_state_action_values_mu_f[:, [0,2]]
+        expected_state_action_values_var = expected_state_action_values_var_f[:, [0,2]] + expected_state_action_values_mu_f[:, [1,3]]
         expected_state_action_values_mu[np.arange(self.batchsize), action_batch.flatten()] = expected_state_values_mu
         expected_state_action_values_var[np.arange(self.batchsize), action_batch.flatten()] = expected_state_values_var
-        expected_state_action_values_mu[np.arange(self.batchsize), 1-action_batch.flatten()] = np.nan
-        expected_state_action_values_var[np.arange(self.batchsize), 1-action_batch.flatten()] = np.nan
+        # expected_state_action_values_mu[np.arange(self.batchsize), 1-action_batch.flatten()] = np.nan
+        expected_state_action_values_var[np.arange(self.batchsize), 1-action_batch.flatten()] = 1e8
         expected_state_action_values_mu = expected_state_action_values_mu.flatten()
         expected_state_action_values_var = expected_state_action_values_var.flatten()
 
@@ -913,18 +960,14 @@ class regime_change_detection_tagi():
         self.policy_net.net.backward()
         self.policy_net.net.step()
 
-        # # For numerical stability: clip the variance of the parameters to 1e-8
-        # policy_net_param_temp = self.policy_net.net.get_params()
-        # policy_net_var_w_clipped = np.clip(policy_net_param_temp[1], 1e-8, None)
-        # policy_net_var_b_clipped = np.clip(policy_net_param_temp[3], 1e-8, None)
-        # self.policy_net.net.load_params(policy_net_param_temp[0], policy_net_var_w_clipped,
-        #                                 policy_net_param_temp[2], policy_net_var_b_clipped)
-
         # For numerical stability: clip the variance of the parameters to 1e-8
         policy_net_param_temp = self.policy_net.net.get_state_dict()
         for key in policy_net_param_temp:
             policy_net_param_temp[key]['var_w']=np.clip(policy_net_param_temp[key]['var_w'], 1e-8, None).tolist()
             policy_net_param_temp[key]['var_b']=np.clip(policy_net_param_temp[key]['var_b'], 1e-8, None).tolist()
+            # Clip the policy_net_param_temp[key]['mu_w'] at 1e8 if it is possitive and -1e8 if it is negative
+            # policy_net_param_temp[key]['mu_w']=np.sign(policy_net_param_temp[key]['mu_w'])*np.clip(np.abs(policy_net_param_temp[key]['mu_w']), 1e-8, None).tolist()
+            # policy_net_param_temp[key]['mu_b']=np.sign(policy_net_param_temp[key]['mu_b'])*np.clip(np.abs(policy_net_param_temp[key]['mu_b']), 1e-8, None).tolist()
         self.policy_net.net.load_state_dict(policy_net_param_temp)
 
     def _plot_rewards(self, metric, show_result=False, ylim=None):
@@ -966,16 +1009,14 @@ class regime_change_detection_tagi():
         state_np = np.repeat(state_temp, self.batchsize, axis=0)
 
         ma, Sa = self.policy_net.net(state_np)
-        Sa += self.sigma_v**2
-
         ma = ma.reshape(self.batchsize, self.policy_net.n_actions*2)[0]
-        print(ma)
-        1/0
+        action_mean = ma[::2]
         Sa = Sa.reshape(self.batchsize, self.policy_net.n_actions*2)[0]
+        action_var = Sa[::2] + ma[1::2]
 
-        a_sample = np.zeros_like(ma)
-        for i in range(len(ma)):
-            a_sample[i] = np.random.normal(ma[i], np.sqrt(Sa[i]))
+        a_sample = np.zeros_like(action_mean)
+        for i in range(len(action_mean)):
+            a_sample[i] = np.random.normal(action_mean[i], np.sqrt(action_var[i]))
 
         action = np.argmax(a_sample, axis=0)
 
@@ -985,5 +1026,9 @@ class regime_change_detection_tagi():
     def _track_Qvalues(self, state):
         self.policy_net.net.eval()
         state_np = state.numpy()
-        Q_values,var_Q_val = self.policy_net.net(state_np)
-        return [Q_values], [var_Q_val]
+        Q_values_f,var_Q_val_f = self.policy_net.net(state_np)
+        Q_values = Q_values_f[::2]
+        var_Q_val = var_Q_val_f[::2] + Q_values_f[1::2]
+        epistemic_uncertainty = var_Q_val_f[::2]
+        aleatory_uncertainty = Q_values_f[1::2]
+        return [Q_values], [var_Q_val], [epistemic_uncertainty], [aleatory_uncertainty]
