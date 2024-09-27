@@ -19,7 +19,6 @@ from collections import namedtuple, deque
 import math
 
 from pytagi.nn import Linear, OutputUpdater, ReLU, Sequential, EvenExp
-from pytagi import exponential_scheduler
 
 import time
 

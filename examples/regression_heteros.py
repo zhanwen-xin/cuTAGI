@@ -91,6 +91,8 @@ def main(num_epochs: int = 50, batch_size: int = 10):
 
     for x, y in test_batch_iter:
         # Predicion
+        print(x)
+        print(type(x))
         m_pred, v_pred = net(x)
 
         # Even positions correspond to Z_out and odd positions to V

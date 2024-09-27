@@ -4,11 +4,12 @@ import numpy as np
 class GridworldEnv(gym.Env):
     metadata = {"render_modes": []}
 
-    def __init__(self, grid_size=4):
+    def __init__(self, grid_size = 4, reward_mean=-1, reward_std=0):
         self.grid_size = grid_size
         self.observation_space = spaces.Discrete(grid_size * grid_size)
         self.action_space = spaces.Discrete(4)
-        self.reward_range = (-1, 1)
+        self.reward_mean = reward_mean
+        self.reward_std = reward_std
         self.reset()
 
     def reset(self):
@@ -38,7 +39,7 @@ class GridworldEnv(gym.Env):
         if self.done:
             self.state = None
 
-        reward = -1.0
+        reward = np.random.normal(loc=self.reward_mean, scale=self.reward_std)
 
         return self.state, reward, self.done, False, self.info
 
