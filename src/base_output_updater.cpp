@@ -191,7 +191,8 @@ Args:
         float cov_y_V = mu_V2;
 
         // Variance of the output
-        float var_sum = var_a_col + mu_V2 + var_obs[col / 2];
+        float var_sum = var_a_col + mu_V2;
+        float var_target = var_obs[col / 2];
 
         // Compute updating quantities for the mean of the output
         float tmp = jcb_col / var_sum;
@@ -200,13 +201,16 @@ Args:
             delta_var[col] = zero_pad;
         } else {
             float obs_diff = obs[col / 2] - mu_a_col;
+            float var_diff = var_target - var_sum;
             delta_mu[col] = tmp * obs_diff;
-            delta_var[col] = -tmp * jcb_col;
+            delta_var[col] = tmp * var_diff * tmp;
         }
 
         // Compute the posterior mean and variance for V
         float mu_V_pos = cov_y_V / var_sum * (obs[col / 2] - mu_a_col);
-        float var_V_pos = mu_V2 - cov_y_V / var_sum * cov_y_V;
+        // float var_V_pos = mu_V2 - cov_y_V / var_sum * cov_y_V;
+        float var_V_pos = mu_V2 + cov_y_V / var_sum * (var_target - var_sum) *
+                                      cov_y_V / var_sum;
 
         // Compute the posterior mean and variance for V2
         float mu_V2_pos = mu_V_pos * mu_V_pos + var_V_pos;
