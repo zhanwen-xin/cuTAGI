@@ -56,116 +56,116 @@ void fnn_heteros_v2()
     // Training
     //////////////////////////////////////////////////////////////////////
 
-    int batch_size = 2;
-    int iters = train_db.num_data / batch_size;
-    std::vector<float> x_batch(batch_size * n_x, 0.0f);
-    std::vector<float> y_batch(batch_size * n_y, 0.0f);
-    std::vector<int> batch_idx(batch_size);
-    auto data_idx = create_range(train_db.num_data);
+    // int batch_size = 2;
+    // int iters = train_db.num_data / batch_size;
+    // std::vector<float> x_batch(batch_size * n_x, 0.0f);
+    // std::vector<float> y_batch(batch_size * n_y, 0.0f);
+    // std::vector<int> batch_idx(batch_size);
+    // auto data_idx = create_range(train_db.num_data);
 
-    OutputUpdater output_updater(model.device);
+    // OutputUpdater output_updater(model.device);
 
-    for (int e = 0; e < 30; e++) {
-        // if (e > 0) {
-        //     // Shuffle data
-        //     std::shuffle(data_idx.begin(), data_idx.end(), seed_e);
-        // }
-        for (int i = 0; i < iters; i++) {
-            // Load data
-            get_batch_idx(data_idx, i * batch_size, batch_size, batch_idx);
-            get_batch_data(train_db.x, batch_idx, n_x, x_batch);
-            get_batch_data(train_db.y, batch_idx, n_y, y_batch);
+    // for (int e = 0; e < 30; e++) {
+    //     // if (e > 0) {
+    //     //     // Shuffle data
+    //     //     std::shuffle(data_idx.begin(), data_idx.end(), seed_e);
+    //     // }
+    //     for (int i = 0; i < iters; i++) {
+    //         // Load data
+    //         get_batch_idx(data_idx, i * batch_size, batch_size, batch_idx);
+    //         get_batch_data(train_db.x, batch_idx, n_x, x_batch);
+    //         get_batch_data(train_db.y, batch_idx, n_y, y_batch);
 
-            // Forward pass
-            model.forward(x_batch);
+    //         // Forward pass
+    //         model.forward(x_batch);
 
-            output_updater.update_heteros(*model.output_z_buffer, y_batch,
-                                          *model.input_delta_z_buffer);
+    //         output_updater.update_heteros(*model.output_z_buffer, y_batch,
+    //                                       *model.input_delta_z_buffer);
 
-            // Backward pass
-            model.backward();
-            model.step();
+    //         // Backward pass
+    //         model.backward();
+    //         model.step();
 
-            // Extract output
-            if (model.device == "cuda") {
-                model.output_to_host();
-            }
-            int check = 1;
-        }
-    }
+    //         // Extract output
+    //         if (model.device == "cuda") {
+    //             model.output_to_host();
+    //         }
+    //         int check = 1;
+    //     }
+    // }
 
-    //////////////////////////////////////////////////////////////////////
-    // Testing
-    //////////////////////////////////////////////////////////////////////
-    int test_batch_size = 1;
-    int test_iters = test_db.num_data / test_batch_size;
-    std::vector<float> test_x_batch(test_batch_size * n_x, 0.0f);
-    std::vector<float> test_y_batch(test_batch_size * n_y, 0.0f);
-    std::vector<int> test_batch_idx(test_batch_size);
-    auto test_data_idx = create_range(test_db.num_data);
+    // //////////////////////////////////////////////////////////////////////
+    // // Testing
+    // //////////////////////////////////////////////////////////////////////
+    // int test_batch_size = 1;
+    // int test_iters = test_db.num_data / test_batch_size;
+    // std::vector<float> test_x_batch(test_batch_size * n_x, 0.0f);
+    // std::vector<float> test_y_batch(test_batch_size * n_y, 0.0f);
+    // std::vector<int> test_batch_idx(test_batch_size);
+    // auto test_data_idx = create_range(test_db.num_data);
 
-    // Output results
-    std::vector<float> mu_a_batch_out(test_batch_size * n_y, 0.0f);
-    std::vector<float> var_a_batch_out(test_batch_size * n_y, 0.0f);
-    std::vector<float> mu_a_out(test_db.num_data * n_y, 0);
-    std::vector<float> var_a_out(test_db.num_data * n_y, 0);
+    // // Output results
+    // std::vector<float> mu_a_batch_out(test_batch_size * n_y, 0.0f);
+    // std::vector<float> var_a_batch_out(test_batch_size * n_y, 0.0f);
+    // std::vector<float> mu_a_out(test_db.num_data * n_y, 0);
+    // std::vector<float> var_a_out(test_db.num_data * n_y, 0);
 
-    for (int i = 0; i < test_iters; i++) {
-        int mt_idx = i * test_batch_size * n_y;
+    // for (int i = 0; i < test_iters; i++) {
+    //     int mt_idx = i * test_batch_size * n_y;
 
-        // Load data
-        get_batch_idx(test_data_idx, i * test_batch_size, test_batch_size,
-                      test_batch_idx);
-        get_batch_data(test_db.x, test_batch_idx, n_x, test_x_batch);
+    //     // Load data
+    //     get_batch_idx(test_data_idx, i * test_batch_size, test_batch_size,
+    //                   test_batch_idx);
+    //     get_batch_data(test_db.x, test_batch_idx, n_x, test_x_batch);
 
-        // Forward pass
-        model.forward(test_x_batch);
+    //     // Forward pass
+    //     model.forward(test_x_batch);
 
-        // Collect the output data
-        for (int j = 0; j < n_y * 2 * test_batch_size; j += 2) {
-            mu_a_batch_out[j / 2] = model.output_z_buffer->mu_a[j];
-            var_a_batch_out[j / 2] = model.output_z_buffer->var_a[j] +
-                                     model.output_z_buffer->mu_a[j + 1];
-        }
-        update_vector(mu_a_out, mu_a_batch_out, mt_idx, n_y);
-        update_vector(var_a_out, var_a_batch_out, mt_idx, n_y);
-    }
+    //     // Collect the output data
+    //     for (int j = 0; j < n_y * 2 * test_batch_size; j += 2) {
+    //         mu_a_batch_out[j / 2] = model.output_z_buffer->mu_a[j];
+    //         var_a_batch_out[j / 2] = model.output_z_buffer->var_a[j] +
+    //                                  model.output_z_buffer->mu_a[j + 1];
+    //     }
+    //     update_vector(mu_a_out, mu_a_batch_out, mt_idx, n_y);
+    //     update_vector(var_a_out, var_a_batch_out, mt_idx, n_y);
+    // }
 
-    // Denormalize data
-    std::vector<float> sy_norm(test_db.y.size(), 0);
-    std::vector<float> my(sy_norm.size(), 0);
-    std::vector<float> sy(sy_norm.size(), 0);
-    std::vector<float> y_test(sy_norm.size(), 0);
+    // // Denormalize data
+    // std::vector<float> sy_norm(test_db.y.size(), 0);
+    // std::vector<float> my(sy_norm.size(), 0);
+    // std::vector<float> sy(sy_norm.size(), 0);
+    // std::vector<float> y_test(sy_norm.size(), 0);
 
-    // Compute log-likelihood
-    for (int k = 0; k < test_db.y.size(); k++) {
-        sy_norm[k] = pow(var_a_out[k], 0.5);
-    }
+    // // Compute log-likelihood
+    // for (int k = 0; k < test_db.y.size(); k++) {
+    //     sy_norm[k] = pow(var_a_out[k], 0.5);
+    // }
 
-    denormalize_mean(mu_a_out, test_db.mu_y, test_db.sigma_y, n_y, my);
-    denormalize_mean(test_db.y, test_db.mu_y, test_db.sigma_y, n_y, y_test);
-    denormalize_std(sy_norm, test_db.mu_y, test_db.sigma_y, n_y, sy);
+    // denormalize_mean(mu_a_out, test_db.mu_y, test_db.sigma_y, n_y, my);
+    // denormalize_mean(test_db.y, test_db.mu_y, test_db.sigma_y, n_y, y_test);
+    // denormalize_std(sy_norm, test_db.mu_y, test_db.sigma_y, n_y, sy);
 
-    // Compute metrics
-    auto mse = mean_squared_error(my, y_test);
-    auto log_lik = avg_univar_log_lik(my, y_test, sy);
+    // // Compute metrics
+    // auto mse = mean_squared_error(my, y_test);
+    // auto log_lik = avg_univar_log_lik(my, y_test, sy);
 
-    // Display results
-    std::cout << "\n%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%\n";
-    std::cout << "RMSE          : ";
-    std::cout << std::fixed;
-    std::cout << std::setprecision(3);
-    std::cout << pow(mse, 0.5) << "\n";
-    std::cout << "Log likelihood: ";
-    std::cout << std::fixed;
-    std::cout << std::setprecision(3);
-    std::cout << log_lik;
-    std::cout << std::endl;
+    // // Display results
+    // std::cout << "\n%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%\n";
+    // std::cout << "RMSE          : ";
+    // std::cout << std::fixed;
+    // std::cout << std::setprecision(3);
+    // std::cout << pow(mse, 0.5) << "\n";
+    // std::cout << "Log likelihood: ";
+    // std::cout << std::fixed;
+    // std::cout << std::setprecision(3);
+    // std::cout << log_lik;
+    // std::cout << std::endl;
 
-    // Save predictions
-    std::string suffix = "prediction_fc_heteros_v2";
-    std::string save_path = get_current_dir() + "/saved_results/";
-    save_predictions(save_path, my, sy, suffix);
+    // // Save predictions
+    // std::string suffix = "prediction_fc_heteros_v2";
+    // std::string save_path = get_current_dir() + "/saved_results/";
+    // save_predictions(save_path, my, sy, suffix);
 }
 
 int test_fnn_heteros_cpu_v2() {

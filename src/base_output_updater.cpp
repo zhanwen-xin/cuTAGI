@@ -138,7 +138,8 @@ void compute_selected_delta_z_output_mp(
 
 void compute_delta_z_heteros(std::vector<float> &mu_a,
                              std::vector<float> &var_a, std::vector<float> &jcb,
-                             std::vector<float> &obs, int start_chunk,
+                             std::vector<float> &obs,
+                             std::vector<float> &var_obs, int start_chunk,
                              int end_chunk, std::vector<float> &delta_mu,
                              std::vector<float> &delta_var)
 /*
@@ -191,6 +192,7 @@ Args:
 
         // Variance of the output
         float var_sum = var_a_col + mu_V2;
+        float var_target = var_obs[col / 2];
 
         // Compute updating quantities for the mean of the output
         float tmp = jcb_col / var_sum;
@@ -199,13 +201,16 @@ Args:
             delta_var[col] = zero_pad;
         } else {
             float obs_diff = obs[col / 2] - mu_a_col;
+            float var_diff = var_target - var_sum;
             delta_mu[col] = tmp * obs_diff;
-            delta_var[col] = -tmp * jcb_col;
+            delta_var[col] = tmp * var_diff * tmp;
         }
 
         // Compute the posterior mean and variance for V
         float mu_V_pos = cov_y_V / var_sum * (obs[col / 2] - mu_a_col);
-        float var_V_pos = mu_V2 - cov_y_V / var_sum * cov_y_V;
+        // float var_V_pos = mu_V2 - cov_y_V / var_sum * cov_y_V;
+        float var_V_pos = mu_V2 + cov_y_V / var_sum * (var_target - var_sum) *
+                                      cov_y_V / var_sum;
 
         // Compute the posterior mean and variance for V2
         float mu_V2_pos = mu_V_pos * mu_V_pos + var_V_pos;
@@ -226,13 +231,11 @@ Args:
     }
 }
 
-void compute_delta_z_heteros_mp(std::vector<float> &mu_a,
-                                std::vector<float> &var_a,
-                                std::vector<float> &jcb,
-                                std::vector<float> &obs, int n,
-                                unsigned int num_threads,
-                                std::vector<float> &delta_mu,
-                                std::vector<float> &delta_var)
+void compute_delta_z_heteros_mp(
+    std::vector<float> &mu_a, std::vector<float> &var_a,
+    std::vector<float> &jcb, std::vector<float> &obs,
+    std::vector<float> &var_obs, int n, unsigned int num_threads,
+    std::vector<float> &delta_mu, std::vector<float> &delta_var)
 /*
  */
 {
@@ -251,8 +254,8 @@ void compute_delta_z_heteros_mp(std::vector<float> &mu_a,
         }
         threads[i] = std::thread(compute_delta_z_heteros, std::ref(mu_a),
                                  std::ref(var_a), std::ref(jcb), std::ref(obs),
-                                 start_chunk, end_chunk, std::ref(delta_mu),
-                                 std::ref(delta_var));
+                                 std::ref(var_obs), start_chunk, end_chunk,
+                                 std::ref(delta_mu), std::ref(delta_var));
     }
 
     for (int i = 0; i < num_threads; i++) {
@@ -315,9 +318,10 @@ void BaseOutputUpdater::update_output_delta_z_heteros(
 
     delta_states.reset_zeros();
 
-    compute_delta_z_heteros(
-        output_states.mu_a, output_states.var_a, output_states.jcb, obs.mu_obs,
-        start_chunk, end_chunk, delta_states.delta_mu, delta_states.delta_var);
+    compute_delta_z_heteros(output_states.mu_a, output_states.var_a,
+                            output_states.jcb, obs.mu_obs, obs.var_obs,
+                            start_chunk, end_chunk, delta_states.delta_mu,
+                            delta_states.delta_var);
 }
 
 ////////////////////////////////////////////////////////////////////////////////
@@ -379,12 +383,11 @@ void OutputUpdater::update_using_indices(BaseHiddenStates &output_states,
 
 void OutputUpdater::update_heteros(BaseHiddenStates &output_states,
                                    std::vector<float> &mu_obs,
+                                   std::vector<float> &var_obs,
                                    BaseDeltaStates &delta_states)
 /*
  */
 {
-    auto var_obs = std::vector<float>(mu_obs.size(), 0.0f);
-
     this->obs->set_obs(mu_obs, var_obs);
     this->obs->block_size = output_states.block_size;
     this->obs->size = mu_obs.size();
