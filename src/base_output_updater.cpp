@@ -192,7 +192,6 @@ Args:
 
         // Variance of the output
         float var_sum = var_a_col + mu_V2;
-        float var_target = var_obs[col / 2];
 
         // Compute updating quantities for the mean of the output
         float tmp = jcb_col / var_sum;
