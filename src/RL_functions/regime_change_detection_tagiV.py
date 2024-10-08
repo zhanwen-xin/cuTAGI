@@ -314,12 +314,7 @@ class regime_change_detection_tagiV():
                 observation, reward, terminated, truncated, info = env.step(action.item(), cost_intervention=self.cost_intervention)
 
                 Q_values_t, var_Q, epist_var_Q, alea_var_Q = self._track_Qvalues(state)
-                # print('epistemic', epist_var_Q)
-                # print('aleatoric', alea_var_Q)
-                # print('---------------------------------')
-                if np.isnan(Q_values_t).any():
-                    print('Code breaks, Q is nan')
-                    1/0
+
                 Q_values_t = Q_values_t[0].tolist()
                 var_Q = var_Q[0].tolist()
                 epist_var_Q = epist_var_Q[0].tolist()
@@ -448,7 +443,6 @@ class regime_change_detection_tagiV():
                     # filename = f'saved_results/Qvalues_training/Qvalues_episode#{i_episode}.png'
                     # plt.savefig(filename)
                     # plt.close()
-
 
             # Early stopping
             if early_stopping:
@@ -627,13 +621,10 @@ class regime_change_detection_tagiV():
 
             # Track Q values
             Q_values_t, Q_var_t, epist_var_Q, alea_var_Q  = self._track_Qvalues(state)
-            # print('epistemic', epist_var_Q)
-            # print('aleatoric', alea_var_Q)
-            # print('============================')
             Q_values_t = Q_values_t[0].tolist()
             Q_var_t = Q_var_t[0].tolist()
             epist_var_Q = epist_var_Q[0].tolist()
-            action = np.argmax(Q_values_t, axis=0)
+            action = np.argmax(np.array(Q_values_t) - np.sqrt(Q_var_t), axis=0)
             Q_values_all.append(Q_values_t)
             Q_var_all.append(Q_var_t)
             Q_var_epstic_all.append(epist_var_Q)
@@ -880,40 +871,12 @@ class regime_change_detection_tagiV():
         next_state_values_mu_f = next_state_values_mu_f.reshape(self.batchsize, self.target_net.n_actions*2)
         next_state_values_var_f = next_state_values_var_f.reshape(self.batchsize, self.target_net.n_actions*2)
 
-        # DEBUG: Determine if there is nan value in next_state_values_var_f[:, [0, 2]]
-        break_code = False
-        if np.isnan(next_state_values_var_f[:, [0, 2]]).any():
-            print('There is nan value in next_state_values_var_f[:, [0, 2]]')
-            break_code = True
-
-        if np.isnan(next_state_values_mu_f[:, [1, 3]]).any():
-            print('There is nan value in next_state_values_mu_f[:, [1, 3]]')
-            break_code = True
-
-
-        if np.isnan(next_state_values_mu_f[:, [0, 2]]).any():
-            print('There is nan value in next_state_values_mu_f[:, [0, 2]]')
-            break_code = True
-
-        if np.isnan(next_state_values_var_f[:, [1, 3]]).any():
-            print('There is nan value in next_state_values_var_f[:, [1, 3]]')
-            break_code = True
-
-        if break_code:
-            1/0
-
         # Along the first axis, select the first and the third columns of the 2D array next_state_values_mu
         next_state_values_mu = next_state_values_mu_f[:, [0, 2]]
         next_state_values_var = next_state_values_var_f[:, [0, 2]] + next_state_values_mu_f[:, [1, 3]]
 
-        # Sample next state values from next_state_values_mu, next_state_values_var following Gaussian distribution
-        next_state_values_samples = np.zeros((self.batchsize, self.target_net.n_actions))
-        for i in range(self.batchsize):
-            for j in range(self.target_net.n_actions):
-                next_state_values_samples[i, j] = np.random.normal(next_state_values_mu[i, j], np.sqrt(next_state_values_var[i, j]))
-
         # Keep the maximum next state value according to the samples
-        max_indices = np.argmax(next_state_values_samples, axis=1)
+        max_indices = np.argmax(next_state_values_mu, axis=1)
         next_state_values_mu = next_state_values_mu[np.arange(self.batchsize), max_indices]
         next_state_values_var = next_state_values_var[np.arange(self.batchsize), max_indices]
 
@@ -921,7 +884,7 @@ class regime_change_detection_tagiV():
         next_state_values_mu_tensor = torch.tensor(next_state_values_mu, device=self.device)
         next_state_values_var_tensor = torch.tensor(next_state_values_var, device=self.device)
         next_state_values_mu_tensor[final_mask] = 0.0
-        next_state_values_var_tensor[final_mask] = 1e-2
+        next_state_values_var_tensor[final_mask] = 1e-4
         next_state_values_mu = next_state_values_mu_tensor.numpy()
         next_state_values_var = next_state_values_var_tensor.numpy()
 
@@ -942,7 +905,7 @@ class regime_change_detection_tagiV():
         expected_state_action_values_mu[np.arange(self.batchsize), action_batch.flatten()] = expected_state_values_mu
         expected_state_action_values_var[np.arange(self.batchsize), action_batch.flatten()] = expected_state_values_var
         # expected_state_action_values_mu[np.arange(self.batchsize), 1-action_batch.flatten()] = np.nan
-        expected_state_action_values_var[np.arange(self.batchsize), 1-action_batch.flatten()] = 1e8
+        # expected_state_action_values_var[np.arange(self.batchsize), 1-action_batch.flatten()] = 1e8
         expected_state_action_values_mu = expected_state_action_values_mu.flatten()
         expected_state_action_values_var = expected_state_action_values_var.flatten()
 
@@ -1011,7 +974,7 @@ class regime_change_detection_tagiV():
         ma = ma.reshape(self.batchsize, self.policy_net.n_actions*2)[0]
         action_mean = ma[::2]
         Sa = Sa.reshape(self.batchsize, self.policy_net.n_actions*2)[0]
-        action_var = Sa[::2] + ma[1::2]
+        action_var = Sa[::2]
 
         a_sample = np.zeros_like(action_mean)
         for i in range(len(action_mean)):
