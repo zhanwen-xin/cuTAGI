@@ -375,8 +375,6 @@ class regime_change_detection_tagiV():
             print(track_intervention_taken_times)
             print(self.episode_f1t)
 
-            self._test_real_data(i_episode, init_z, init_Sz, init_mu_preds_lstm, init_var_preds_lstm)
-
             if plot_samples:
                 timesteps = np.arange(0, len(info['measurement_one_episode']), 1)
                 mu_hidden_states_one_episode = np.array(info['hidden_state_one_episode']['mu'])
@@ -493,19 +491,21 @@ class regime_change_detection_tagiV():
                         state, info = env.reset(z=init_z, Sz=init_Sz, mu_preds_lstm = copy.deepcopy(init_mu_preds_lstm), var_preds_lstm = copy.deepcopy(init_var_preds_lstm),
                                     net_test = self.LSTM_test_net, init_mu_W2b = None, init_var_W2b = None, phi_AR = self.phi_AR, Sigma_AR = self.Sigma_AR,
                                     phi_AA = self.phi_AA, Sigma_AA_ratio = self.Sigma_AA_ratio)
-                        state = state['hidden_states']
-                        state = torch.tensor(state, dtype=torch.float32, device=self.device).unsqueeze(0)
 
                         # Nomalize the state
                         AR_std_stationary = np.sqrt(self.trained_BDLM.Sigma_AR/(1 - self.trained_BDLM.phi_AR**2))
                         LA_var_stationary = self.trained_BDLM.Sigma_AA_ratio *  self.trained_BDLM.Sigma_AR/(1 - self.trained_BDLM.phi_AA**2)
-                        state = normalize_tensor_two_parts(state, 0, np.sqrt(LA_var_stationary), 0, AR_std_stationary, seg_len)
 
                         # Run agent on the i_val_episode time series
                         val_ep_steps = 0
                         for t in count():
-                            action = self._select_action(state)
-                            observation, _, terminated, truncated, info = env.step(action.item())
+                            state = torch.tensor(state['hidden_states'],\
+                                dtype=torch.float32, device='cpu').unsqueeze(0)
+                            state = normalize_tensor_two_parts(state, 0, np.sqrt(LA_var_stationary),\
+                                                                0, AR_std_stationary, seg_len)
+
+                            action = self._select_action(state, greedy=True)
+                            state, _, terminated, truncated, info = env.step(action.item(), cost_intervention=self.cost_intervention)
 
                             done = terminated or truncated
 
@@ -532,11 +532,8 @@ class regime_change_detection_tagiV():
                                     FN += 1
                                     lambda_i = 0
                                     lambdas_all.append(lambda_i)
-                                next_state = None
-                            else:
-                                next_state = torch.tensor(observation['hidden_states'], dtype=torch.float32, device=self.device).unsqueeze(0)
-                                next_state = normalize_tensor_two_parts(next_state, 0, np.sqrt(LA_var_stationary), 0, AR_std_stationary, seg_len)
-                            state = next_state
+                                state = None
+
                             val_ep_steps += 1
 
                             if done:
@@ -547,6 +544,8 @@ class regime_change_detection_tagiV():
 
                     current_F1t = np.mean(lambdas_all)*2*TP/(2*TP+FP+FN)
                     self.episode_f1t.append(current_F1t)
+
+                    self._test_real_data(i_episode, init_z, init_Sz, init_mu_preds_lstm, init_var_preds_lstm, current_F1t)
 
                     if current_F1t > optim_F1t:
                         print('------------------------------------')
@@ -591,7 +590,7 @@ class regime_change_detection_tagiV():
         plt.show()
         plt.ioff()
 
-    def _test_real_data(self, i_episode, init_z, init_Sz, init_mu_preds_lstm, init_var_preds_lstm):
+    def _test_real_data(self, i_episode, init_z, init_Sz, init_mu_preds_lstm, init_var_preds_lstm, validation_F1t):
         from itertools import count
 
         step_look_back = 64
@@ -616,24 +615,23 @@ class regime_change_detection_tagiV():
                                 dtype=torch.float32, device='cpu').unsqueeze(0)
             state = normalize_tensor_two_parts(state, 0, np.sqrt(LA_var_stationary),\
                                                 0, AR_std_stationary, seg_len)
-            # action = agents_RL._select_action(state)
-            # action = action.item()
 
+            # Select action
+            action = self._select_action(state, greedy=True)
             # Track Q values
             Q_values_t, Q_var_t, epist_var_Q, alea_var_Q  = self._track_Qvalues(state)
             Q_values_t = Q_values_t[0].tolist()
             Q_var_t = Q_var_t[0].tolist()
             epist_var_Q = epist_var_Q[0].tolist()
-            action = np.argmax(np.array(Q_values_t) - np.sqrt(Q_var_t), axis=0)
             Q_values_all.append(Q_values_t)
             Q_var_all.append(Q_var_t)
             Q_var_epstic_all.append(epist_var_Q)
 
-            state, _, terminated, truncated, info = env.step(action, cost_intervention=self.cost_intervention)
+            state, _, terminated, truncated, info = env.step(action.item(), cost_intervention=self.cost_intervention)
 
             RL_step_taken += 1
 
-            if action == 1:
+            if action.item() == 1:
                 intervention_index.append(t + step_look_back + 1)
 
             done = terminated or truncated
@@ -717,6 +715,9 @@ class regime_change_detection_tagiV():
         # set x axis to be the same as ax0
         ax5.set_xlim(ax0.get_xlim())
         ax5.legend(loc='upper center', bbox_to_anchor=(1.07,1))
+
+        # Print the F1t score in the title
+        ax0.set_title(f'Epoch {i_episode+1}, F1t = {validation_F1t:.5f}')
 
         # save figure to local
         filename = f'saved_results/CASC_LGA007PIAP_E010_2024_07/update_vs_real_performance/episode#{i_episode}.png'
@@ -933,7 +934,7 @@ class regime_change_detection_tagiV():
         self.policy_net.net.load_state_dict(policy_net_param_temp)
 
     def _plot_rewards(self, metric, show_result=False, ylim=None):
-        plt.figure(1)
+        plt.figure(3)
         durations_t = torch.tensor(metric, dtype=torch.float)
         if show_result:
             plt.title('Result')
@@ -963,7 +964,7 @@ class regime_change_detection_tagiV():
             else:
                 display.display(plt.gcf())
 
-    def _select_action(self, state):
+    def _select_action(self, state, greedy = False):
         self.policy_net.net.eval()
         state_np = state.numpy()
 
@@ -974,13 +975,17 @@ class regime_change_detection_tagiV():
         ma = ma.reshape(self.batchsize, self.policy_net.n_actions*2)[0]
         action_mean = ma[::2]
         Sa = Sa.reshape(self.batchsize, self.policy_net.n_actions*2)[0]
-        action_var = Sa[::2]
 
-        a_sample = np.zeros_like(action_mean)
-        for i in range(len(action_mean)):
-            a_sample[i] = np.random.normal(action_mean[i], np.sqrt(action_var[i]))
+        if greedy:
+            action_var = Sa[::2] + ma[1::2]
+            action = np.argmax(np.array(action_mean) - np.sqrt(action_var), axis=0)
+        else:
+            action_var = Sa[::2]
 
-        action = np.argmax(a_sample, axis=0)
+            a_sample = np.zeros_like(action_mean)
+            for i in range(len(action_mean)):
+                a_sample[i] = np.random.normal(action_mean[i], np.sqrt(action_var[i]))
+            action = np.argmax(a_sample, axis=0)
 
         self.steps_done += 1
         return torch.tensor([[action]],device=self.device)
