@@ -222,16 +222,17 @@ class regime_change_detection_tagiV():
         self.batchsize = batchsize
         num_steps_per_episode = len(self.syn_ts_all[0])
         track_intervention_taken_times = np.zeros(num_episodes-validation_episode_num)
-        optim_F1t = -1E8
-        optim_episode = 0
+        optim_episode = early_stop_start
         # Set seed for numpy random
         np.random.seed(0)
         validation_rand_samples = [np.random.random() for _ in range(validation_episode_num)]
-        anm_positions_val = np.random.randint(step_look_back + self.trained_BDLM.input_seq_len, int(num_steps_per_episode/2), validation_episode_num)
-        anm_magnitudes_val = np.random.uniform(anomaly_range[0], anomaly_range[1], validation_episode_num)
-        print(validation_rand_samples)
-        print(anm_positions_val)
-        print(anm_magnitudes_val)
+        anm_mag_ratio = 0.94
+        anm_mag_ratio_pow = 1
+        # anm_positions_val = np.random.randint(step_look_back + self.trained_BDLM.input_seq_len, int(num_steps_per_episode/2), validation_episode_num)
+        # anm_magnitudes_val = np.random.uniform(anomaly_range[0], anomaly_range[1], validation_episode_num)
+        # print(validation_rand_samples)
+        # print(anm_positions_val)
+        # print(anm_magnitudes_val)
 
         np.random.seed(int(time.time() * 1000)% (2**32 - 1))
         # Estimatethe cost of intervention
@@ -445,47 +446,35 @@ class regime_change_detection_tagiV():
             # Early stopping
             if early_stopping:
                 if i_episode >= early_stop_start:
-                    FP = 0
-                    FN = 0
-                    TP = 0
-                    lambdas_all = []
+                    agent_valid = True
+                    false_alarm_tolerance = 3
+                    false_alarm_count = 0
                     for i_val_episode in range(validation_episode_num):
-                        anm_pos = anm_positions_val[i_val_episode]
+                        anm_pos = int(num_steps_per_episode/2)
 
                         sample = validation_rand_samples[i_val_episode]
                         if sample < 0.5:
-                            train_dtl = SyntheticTimeSeriesDataloader(
-                                x_file=self.observation_save_path,
-                                select_column = num_episodes-validation_episode_num+i_val_episode,
-                                date_time_file=self.datetime_save_path,
-                                add_anomaly = True,
-                                anomaly_magnitude = anm_magnitudes_val[i_val_episode],
-                                anomaly_start=anm_pos,
-                                x_mean=self.trained_BDLM.train_dtl.x_mean,
-                                x_std=self.trained_BDLM.train_dtl.x_std,
-                                output_col=self.trained_BDLM.output_col,
-                                input_seq_len=self.trained_BDLM.input_seq_len,
-                                output_seq_len=self.trained_BDLM.output_seq_len,
-                                num_features=self.trained_BDLM.num_features,
-                                stride=self.trained_BDLM.seq_stride,
-                                time_covariates=self.trained_BDLM.time_covariates,
-                            )
-                            anomaly_injected = True
+                            anm_magnitudes_val = anomaly_range[0] * anm_mag_ratio ** anm_mag_ratio_pow
                         else:
-                            train_dtl = SyntheticTimeSeriesDataloader(
-                                x_file=self.observation_save_path,
-                                select_column = num_episodes-validation_episode_num+i_val_episode,
-                                date_time_file=self.datetime_save_path,
-                                x_mean=self.trained_BDLM.train_dtl.x_mean,
-                                x_std=self.trained_BDLM.train_dtl.x_std,
-                                output_col=self.trained_BDLM.output_col,
-                                input_seq_len=self.trained_BDLM.input_seq_len,
-                                output_seq_len=self.trained_BDLM.output_seq_len,
-                                num_features=self.trained_BDLM.num_features,
-                                stride=self.trained_BDLM.seq_stride,
-                                time_covariates=self.trained_BDLM.time_covariates,
-                            )
-                            anomaly_injected = False
+                            anm_magnitudes_val = anomaly_range[1] * anm_mag_ratio ** anm_mag_ratio_pow
+
+                        train_dtl = SyntheticTimeSeriesDataloader(
+                            x_file=self.observation_save_path,
+                            select_column = num_episodes-validation_episode_num+i_val_episode,
+                            date_time_file=self.datetime_save_path,
+                            add_anomaly = True,
+                            anomaly_magnitude = anm_magnitudes_val,
+                            anomaly_start=anm_pos,
+                            x_mean=self.trained_BDLM.train_dtl.x_mean,
+                            x_std=self.trained_BDLM.train_dtl.x_std,
+                            output_col=self.trained_BDLM.output_col,
+                            input_seq_len=self.trained_BDLM.input_seq_len,
+                            output_seq_len=self.trained_BDLM.output_seq_len,
+                            num_features=self.trained_BDLM.num_features,
+                            stride=self.trained_BDLM.seq_stride,
+                            time_covariates=self.trained_BDLM.time_covariates,
+                        )
+                        anomaly_injected = True
 
                         env = LSTM_KF_Env(render_mode=None, data_loader=train_dtl, step_look_back=step_look_back)
                         state, info = env.reset(z=init_z, Sz=init_Sz, mu_preds_lstm = copy.deepcopy(init_mu_preds_lstm), var_preds_lstm = copy.deepcopy(init_var_preds_lstm),
@@ -510,68 +499,58 @@ class regime_change_detection_tagiV():
                             done = terminated or truncated
 
                             if action.item() == 1:
-                                if anomaly_injected:
-                                    # Alarm is triggered
-                                    trigger_pos = val_ep_steps + step_look_back + self.trained_BDLM.input_seq_len
-                                    if trigger_pos >= anm_pos:
-                                        # True alarm
-                                        TP += 1
-                                        lambda_i = 1 - (trigger_pos - anm_pos) / (num_steps_per_episode - anm_pos)
-                                    else:
-                                        # False alarm
-                                        FP += 1
-                                        lambda_i = 1
-                                    lambdas_all.append(lambda_i)
+                                # Alarm is triggered
+                                trigger_pos = val_ep_steps + step_look_back + self.trained_BDLM.input_seq_len
+                                if trigger_pos >= anm_pos:
+                                    # True alarm
+                                    pass
                                 else:
-                                    FP += 1
+                                    # False alarm
+                                    print('False alarm found')
+                                    false_alarm_count += 1
                                 done = True
 
                             if terminated:
                                 # When comes to here, alarm is never triggered and the time series ends
-                                if anomaly_injected:
-                                    FN += 1
-                                    lambda_i = 0
-                                    lambdas_all.append(lambda_i)
+                                print('No false_alarm, but agent cannot detect the target anm magnitude')
+                                agent_valid = False
                                 state = None
 
                             val_ep_steps += 1
-
                             if done:
-                                print('For validation episode:', i_val_episode)
-                                print('Anomaly is injected:', anomaly_injected)
-                                print(f'TP = {TP}, FP = {FP}, FN = {FN}, lambda = {lambdas_all}')
                                 break
 
-                    current_F1t = np.mean(lambdas_all)*2*TP/(2*TP+FP+FN)
-                    self.episode_f1t.append(current_F1t)
+                        if false_alarm_count >= false_alarm_tolerance:
+                            print('False alarm reach tolerance, agent not valid')
+                            agent_valid = False
 
-                    self._test_real_data(i_episode, init_z, init_Sz, init_mu_preds_lstm, init_var_preds_lstm, current_F1t)
+                        if agent_valid is not True:
+                            break
 
-                    if current_F1t > optim_F1t:
-                        print('------------------------------------')
-                        print(f'Optimal F1t: {optim_F1t}, episode: {optim_episode}')
-                        print(f'Current F1t: {current_F1t}, episode: {i_episode}')
-                        print('****** Update the optimal model ******')
-                        print('------------------------------------')
-                        optim_F1t = current_F1t
+                    self._test_real_data(i_episode, init_z, init_Sz, init_mu_preds_lstm, init_var_preds_lstm, anm_magnitudes_val, agent_valid)
+
+                    if agent_valid is True:
+                        print('Agent is valid, we further reduce the anomaly that it can detect!')
+                        anm_mag_ratio_pow += 1
+
                         optim_episode = i_episode
                         net_param_temp = self.policy_net.net.get_state_dict()
                         self.optimal_net.net.load_state_dict(net_param_temp)
                     else:
-                        print('------------------------------------')
-                        print(f'Optimal F1t: {optim_F1t}, episode: {optim_episode}')
-                        print(f'Current F1t: {current_F1t}, episode: {i_episode}')
-                        print('Optimal model remains')
-                        print('------------------------------------')
-                        if i_episode - optim_episode > patience:
-                            print('Early stopping is triggered, training stopped, model saved at epoch:', optim_episode)
-                            net_param_temp = self.optimal_net.net.get_state_dict()
-                            self.policy_net.net.load_state_dict(net_param_temp)
-                            # Save policy net
-                            self.policy_net.net.save_csv(agent_net_save_path)
-                            break
+                        if optim_episode == early_stop_start:
+                            pass
+                        else:
+                            if i_episode - optim_episode > patience:
+                                print('Early stopping is triggered, training stopped, model saved at epoch:', optim_episode)
+                                net_param_temp = self.optimal_net.net.get_state_dict()
+                                self.policy_net.net.load_state_dict(net_param_temp)
+                                # Save policy net
+                                self.policy_net.net.save_csv(agent_net_save_path)
+                                break
+
                     if i_episode == num_episodes-validation_episode_num-1:
                         print('Finished training in all episodes.')
+                        print('Model saved at epoch:', optim_episode)
                         # Save policy net
                         self.policy_net.net.save_csv(agent_net_save_path)
 
@@ -590,7 +569,7 @@ class regime_change_detection_tagiV():
         plt.show()
         plt.ioff()
 
-    def _test_real_data(self, i_episode, init_z, init_Sz, init_mu_preds_lstm, init_var_preds_lstm, validation_F1t):
+    def _test_real_data(self, i_episode, init_z, init_Sz, init_mu_preds_lstm, init_var_preds_lstm, validation_anm_mag, agent_valid):
         from itertools import count
 
         step_look_back = 64
@@ -717,10 +696,10 @@ class regime_change_detection_tagiV():
         ax5.legend(loc='upper center', bbox_to_anchor=(1.07,1))
 
         # Print the F1t score in the title
-        ax0.set_title(f'Epoch {i_episode+1}, F1t = {validation_F1t:.5f}')
+        ax0.set_title(f'Epoch {i_episode+1}, val_anm_mag = {validation_anm_mag :.4f}, agent_valid = {agent_valid}')
 
         # save figure to local
-        filename = f'saved_results/CASC_LGA007PIAP_E010_2024_07/update_vs_real_performance/episode#{i_episode}.png'
+        filename = f'saved_results/CASC_LGA007PIAP_E010_2024_07/update_vs_real_performance/episode#{i_episode+1}.png'
         plt.savefig(filename)
 
     def _estimate_Q_distribution(self, num_episodes, validation_episode_num, init_z, init_Sz, init_mu_preds_lstm, init_var_preds_lstm):
