@@ -29,11 +29,11 @@ class TAGI_Net():
     def __init__(self, n_observations, n_actions):
         super(TAGI_Net, self).__init__()
         self.net = Sequential(
-                    Linear(n_observations, 128),
+                    Linear(n_observations, 32),
                     ReLU(),
-                    Linear(128, 128),
+                    Linear(32, 32),
                     ReLU(),
-                    Linear(128, n_actions * 2),
+                    Linear(32, n_actions * 2),
                     EvenExp()
                     )
         self.n_actions = n_actions
@@ -241,13 +241,13 @@ class regime_change_detection_tagiV():
             mean_R, std_R = self._estimate_R_distribution(num_episodes, validation_episode_num, init_z, init_Sz, init_mu_preds_lstm, init_var_preds_lstm)
             self.mean_R = mean_R
             self.std_R = std_R
-            self.cost_intervention = (self.mean_R + self.std_R)/(1-self.GAMMA) # 11.608093917361542 # self.mean_Q + self.std_Q
+            self.cost_intervention = (1+self.GAMMA)*(self.mean_R + self.std_R)/(1-self.GAMMA) # 11.608093917361542 # self.mean_Q + self.std_Q
             print('The mean and std of R:', mean_R, std_R)
             print('=====================================')
         else:
             self.mean_R = mean_R
             self.std_R = std_R
-            self.cost_intervention = (self.mean_R + self.std_R)/(1-self.GAMMA)
+            self.cost_intervention = (1+self.GAMMA)*(self.mean_R + self.std_R)/(1-self.GAMMA)
 
         for i_episode in range(num_episodes-validation_episode_num):
             anm_pos = np.random.randint(step_look_back + self.trained_BDLM.input_seq_len, int((num_steps_per_episode-step_look_back + self.trained_BDLM.input_seq_len)/2))
@@ -443,6 +443,9 @@ class regime_change_detection_tagiV():
                     # plt.savefig(filename)
                     # plt.close()
 
+            if i_episode >= early_stop_start:
+                self._test_real_data(i_episode, init_z, init_Sz, init_mu_preds_lstm, init_var_preds_lstm)
+
             # Early stopping
             if early_stopping:
                 if i_episode >= early_stop_start:
@@ -569,7 +572,7 @@ class regime_change_detection_tagiV():
         plt.show()
         plt.ioff()
 
-    def _test_real_data(self, i_episode, init_z, init_Sz, init_mu_preds_lstm, init_var_preds_lstm, validation_anm_mag, agent_valid):
+    def _test_real_data(self, i_episode, init_z, init_Sz, init_mu_preds_lstm, init_var_preds_lstm, validation_anm_mag=0, agent_valid=True):
         from itertools import count
 
         step_look_back = 64
