@@ -775,3 +775,39 @@ Sequential::get_outputs_smoother()
 
     return {py_mu_zo_smooths, py_var_zo_smooths};
 }
+
+std::tuple<pybind11::array_t<float>, pybind11::array_t<float>>
+Sequential::get_input_states()
+{
+    // Check if input_state_update is enabled
+    if (!this->input_state_update) {
+        throw std::invalid_argument("Error in file: " + std::string(__FILE__) +
+                                    " at line: " + std::to_string(__LINE__) +
+                                    ". input_state_update is set to False");
+    }
+
+    // Define the slice input states size
+    const size_t end_index = this->layers.front()->get_input_size() * this->input_z_buffer->block_size;
+
+    // Slice delta_mu and delta_var
+    std::vector<float> delta_mu_slice(
+        this->output_delta_z_buffer->delta_mu.begin(),
+        this->output_delta_z_buffer->delta_mu.begin() + end_index
+    );
+
+    std::vector<float> delta_var_slice(
+        this->output_delta_z_buffer->delta_var.begin(),
+        this->output_delta_z_buffer->delta_var.begin() + end_index
+    );
+
+    // Return the slices as pybind11::array_t
+    auto py_delta_mu = pybind11::array_t<float>(
+        delta_mu_slice.size(),
+        delta_mu_slice.data());
+    auto py_delta_var = pybind11::array_t<float>(
+        delta_var_slice.size(),
+        delta_var_slice.data());
+
+    return {py_delta_mu, py_delta_var};
+}
+
