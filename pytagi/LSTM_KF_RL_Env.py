@@ -162,15 +162,19 @@ class LSTM_KF_Env(gym.Env):
                     mu_baseline_pred = LT_F @ mu_baseline
                     cov_baseline_pred = LT_F @ cov_baseline @ LT_F.T
                     # Add delta to baseline_pred
-                    mu_baseline_target = mu_baseline_pred + z_update[3]
-                    cov_baseline_target = cov_baseline_pred + Sz_update[3, 3] - 2 * Sz_update[3, 0]
+                    # mu_baseline_target = mu_baseline_pred + z_update[3]
+                    # cov_baseline_target = cov_baseline_pred + Sz_update[3, 3] + 2 * Sz_update[3, 0]
+                    mu_baseline_target = mu_baseline_pred + z_update[-2]
+                    cov_baseline_target = cov_baseline_pred + Sz_update[-2, -2] + 2 * Sz_update[-2, 0]
                     # Infer baseline components
                     J = cov_baseline @ LT_F.T / cov_baseline_pred
                     z_update[:2] = mu_baseline + J @ (mu_baseline_target - mu_baseline_pred)
                     Sz_update[:2, :2] = cov_baseline + J @ (cov_baseline_target - cov_baseline_pred) @ J.T
                     # Exclude the intervention component from AR at position -2
-                    z_update[-2] -= z_update[3]
-                    Sz_update[-2, -2] = Sz_update[-2, -2] + Sz_update[3, 3] - 2 * Sz_update[3, -2]
+                    # z_update[-2] -= z_update[3]
+                    # Sz_update[-2, -2] = Sz_update[-2, -2] + Sz_update[3, 3] + 2 * Sz_update[3, -2]
+                    z_update[-2] -= z_update[-2]
+                    Sz_update[-2, -2] = Sz_update[-2, -2] + Sz_update[-2, -2] + 2 * Sz_update[-2, -2]
                     self.ts_model.z = z_update
                     self.ts_model.Sz = Sz_update
                     self.ts_model.Sz[1, 1] = self.ts_model.Sz[0, 0]
@@ -201,7 +205,7 @@ class LSTM_KF_Env(gym.Env):
                                                                             mu = 0, std=np.sqrt(Sz_update[2, 2]+self.ts_model.init_Sz[2, 2])))
 
         y_pred_excl_itv = y_pred - z_update[3]
-        Sy_pred_excl_itv = Sy_pred + Sz_update[3, 3] - 2 * Sz_update[3, -2]
+        Sy_pred_excl_itv = Sy_pred + Sz_update[3, 3] + 2 * Sz_update[3, -2]
 
         if np.isnan(y):
             likelihood = norm.pdf(y_pred_excl_itv, loc=y_pred_excl_itv, scale=np.sqrt(Sy_pred_excl_itv))
