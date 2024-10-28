@@ -61,7 +61,7 @@ class LSTM_KF_Env(gym.Env):
 
     def reset(self, seed=None, z=None, Sz=None, mu_preds_lstm = [], var_preds_lstm = [],
               net_test = None, init_mu_W2b = None, init_var_W2b = None, phi_AR = None, Sigma_AR = None,
-              phi_AA = None, Sigma_AA_ratio = None):
+              phi_AA = None, Sigma_AA_ratio = None, use_BAR = False, input_BAR = None):
         super().reset(seed=seed)
 
         sigma_v = 1E-12
@@ -71,20 +71,11 @@ class LSTM_KF_Env(gym.Env):
         self.var_preds_lstm = var_preds_lstm
         self.obs_unnorm = []
 
-        # self.ts_model = LSTM_SSM(
-        #             neural_network = net_test,           # LSTM
-        #             baseline = 'AA + AR',
-        #             z_init  = z,
-        #             Sz_init = Sz,
-        #             use_auto_AR = True,
-        #             mu_W2b_init = init_mu_W2b,
-        #             var_W2b_init = init_var_W2b,
-        #             Sigma_AA_ratio = Sigma_AA_ratio,
-        #             phi_AA = phi_AA,
-        #         )
         self.ts_model = LSTM_SSM(
                     neural_network = net_test,           # LSTM
-                    baseline = 'AA + AR_fixed',
+                    baseline = 'LT + BAR + ITV + AR_fixed',
+                    use_BAR=use_BAR,
+                    input_BAR=input_BAR,
                     z_init  = z,
                     Sz_init = Sz,
                     phi_AR = phi_AR,
@@ -93,22 +84,6 @@ class LSTM_KF_Env(gym.Env):
                     phi_AA = phi_AA,
                     use_auto_AR = False,
                 )
-        # z = np.delete(z, 3).reshape(-1, 1)
-        # Sz = np.delete(Sz, 3, axis=0)
-        # Sz = np.delete(Sz, 3, axis=1)
-        # self.ts_model = LSTM_SSM(
-        #             neural_network = net_test,           # LSTM
-        #             baseline = 'AA + AR_fixed',
-        #             z_init  = z,
-        #             Sz_init = Sz,
-        #             use_auto_AR = False,
-        #             mu_W2b_init = init_mu_W2b,
-        #             var_W2b_init = init_var_W2b,
-        #             phi_AR = phi_AR,
-        #             Sigma_AR = Sigma_AR,
-        #             Sigma_AA_ratio = Sigma_AA_ratio,
-        #             phi_AA = phi_AA,
-        #         )
 
         self.ts_model.init_ssm_hs(z = z, Sz = Sz)
 
@@ -131,9 +106,9 @@ class LSTM_KF_Env(gym.Env):
             # Feed forward
             y_pred, Sy_pred, z_pred, Sz_pred, m_pred, v_pred = self.ts_model(mu_x, var_x)
             # Backward
-            z_updata, Sz_update = self.ts_model.backward(mu_obs = y, var_obs = self.var_y, train_LSTM = False)
+            z_update, Sz_update = self.ts_model.backward(mu_obs = y, var_obs = self.var_y, train_LSTM = False)
 
-            self.hidden_state_one_episode['mu'].append(z_updata.flatten().tolist())
+            self.hidden_state_one_episode['mu'].append(z_update.flatten().tolist())
             self.hidden_state_one_episode['var'].append(Sz_update.tolist())
             self.prediction_one_episode['mu'].append(y_pred.tolist())
             self.prediction_one_episode['var'].append(Sy_pred.tolist())
@@ -147,7 +122,7 @@ class LSTM_KF_Env(gym.Env):
         self.current_step = self.step_look_back # Current time step is the python index
         hidden_states_temp = self._hidden_states_collector(self.current_step, self.hidden_state_one_episode)
 
-        self._agent_vision = np.hstack((hidden_states_temp['mu'][:, 2], hidden_states_temp['mu'][:, -2]))
+        self._agent_vision = hidden_states_temp['mu'][:, 3]
         self._measurement = self.obs_unnorm[-1]
 
         observation = self._get_obs()
@@ -156,12 +131,10 @@ class LSTM_KF_Env(gym.Env):
         return observation, info
 
     def step(self, action, interv_LT_scale = 1, cost_intervention = 0.0, add_anomaly = False, anomaly_scale = 1e-2):
-        # Action
-        if action == 1:
-            self.ts_model.z[2] = self.ts_model.init_z[2]
-            # self.ts_model.Sz[2, :] = self.ts_model.init_Sz[2, :]
-            # self.ts_model.Sz[:, 2] = self.ts_model.init_Sz[:, 2]
-            self.ts_model.Sz[1, 1] += interv_LT_scale
+        # # Action
+        # if action == 1:
+        #     # self.ts_model.z[2] = self.ts_model.init_z[2]
+        #     self.ts_model.Sz[1, 1] += interv_LT_scale
 
         # Run Kalman filter
         self.current_step += 1
@@ -178,9 +151,31 @@ class LSTM_KF_Env(gym.Env):
                 # Feed forward
                 y_pred, Sy_pred, z_pred, Sz_pred, m_pred, v_pred = self.ts_model(mu_x, var_x)
                 # Backward
-                z_updata, Sz_update = self.ts_model.backward(mu_obs = y, var_obs = self.var_y, train_LSTM = False)
+                z_update, Sz_update = self.ts_model.backward(mu_obs = y, var_obs = self.var_y, train_LSTM = False)
 
-                self.hidden_state_one_episode['mu'].append(z_updata.flatten().tolist())
+                # Action
+                if action == 1:
+                    # Use intervention estimation to infer the baseline model
+                    mu_baseline = z_update[:2]
+                    cov_baseline = Sz_update[:2, :2]
+                    LT_F = self.ts_model.F[:,:2]
+                    mu_baseline_pred = LT_F @ mu_baseline
+                    cov_baseline_pred = LT_F @ cov_baseline @ LT_F.T
+                    # Add delta to baseline_pred
+                    mu_baseline_target = mu_baseline_pred + z_update[3]
+                    cov_baseline_target = cov_baseline_pred + Sz_update[3, 3] - 2 * Sz_update[3, 0]
+                    # Infer baseline components
+                    J = cov_baseline @ LT_F.T / cov_baseline_pred
+                    z_update[:2] = mu_baseline + J @ (mu_baseline_target - mu_baseline_pred)
+                    Sz_update[:2, :2] = cov_baseline + J @ (cov_baseline_target - cov_baseline_pred) @ J.T
+                    # Exclude the intervention component from AR at position -2
+                    z_update[-2] -= z_update[3]
+                    Sz_update[-2, -2] = Sz_update[-2, -2] + Sz_update[3, 3] - 2 * Sz_update[3, -2]
+                    self.ts_model.z = z_update
+                    self.ts_model.Sz = Sz_update
+                    self.ts_model.Sz[1, 1] = self.ts_model.Sz[0, 0]
+
+                self.hidden_state_one_episode['mu'].append(z_update.flatten().tolist())
                 self.hidden_state_one_episode['var'].append(Sz_update.tolist())
                 self.prediction_one_episode['mu'].append(y_pred.tolist())
                 self.prediction_one_episode['var'].append(Sy_pred.tolist())
@@ -192,7 +187,7 @@ class LSTM_KF_Env(gym.Env):
 
         hidden_states_temp = self._hidden_states_collector(self.current_step, self.hidden_state_one_episode)
 
-        self._agent_vision = np.hstack((hidden_states_temp['mu'][:, 2], hidden_states_temp['mu'][:, -2]))
+        self._agent_vision = hidden_states_temp['mu'][:, 3]
         self._measurement = self.obs_unnorm[-1]
 
         observation = self._get_obs()
@@ -205,20 +200,25 @@ class LSTM_KF_Env(gym.Env):
         clip_value_la = np.log(self._evaluate_standard_gaussian_probability(x = 1*np.sqrt(Sz_update[2, 2]+self.ts_model.init_Sz[2, 2]), \
                                                                             mu = 0, std=np.sqrt(Sz_update[2, 2]+self.ts_model.init_Sz[2, 2])))
 
-        if np.isnan(y):
-            likelihood = norm.pdf(y_pred, loc=y_pred, scale=np.sqrt(Sy_pred))
-        else:
-            likelihood = norm.pdf(y, loc=y_pred, scale=np.sqrt(Sy_pred))
+        y_pred_excl_itv = y_pred - z_update[3]
+        Sy_pred_excl_itv = Sy_pred + Sz_update[3, 3] - 2 * Sz_update[3, -2]
 
-        reward = float(
-                # likelihood
-                # np.log(likelihood)
-                np.clip(np.log(likelihood),-1e3, np.inf)
-                + np.clip(np.log(self._evaluate_standard_gaussian_probability(z_updata[-2], 0, np.sqrt(Sz_update[-2, -2]+AR_var_stationary))),\
-                            -1e3, clip_value_ar) - clip_value_ar\
-                + np.clip(np.log(self._evaluate_standard_gaussian_probability(z_updata[2], 0, np.sqrt(Sz_update[2, 2]+self.ts_model.init_Sz[2, 2]))),\
-                            -1e3, clip_value_la) - clip_value_la\
-                )
+        if np.isnan(y):
+            likelihood = norm.pdf(y_pred_excl_itv, loc=y_pred_excl_itv, scale=np.sqrt(Sy_pred_excl_itv))
+        else:
+            likelihood = norm.pdf(y, loc=y_pred_excl_itv, scale=np.sqrt(Sy_pred_excl_itv))
+
+        reward = float(np.clip(np.log(likelihood),-1e3, np.inf))
+
+        # reward = float(
+        #         # likelihood
+        #         # np.log(likelihood)
+        #         np.clip(np.log(likelihood),-1e3, np.inf)
+        #         + np.clip(np.log(self._evaluate_standard_gaussian_probability(z_update[-2], 0, np.sqrt(Sz_update[-2, -2]+AR_var_stationary))),\
+        #                     -1e3, clip_value_ar) - clip_value_ar\
+        #         + np.clip(np.log(self._evaluate_standard_gaussian_probability(z_update[2], 0, np.sqrt(Sz_update[2, 2]+self.ts_model.init_Sz[2, 2]))),\
+        #                     -1e3, clip_value_la) - clip_value_la\
+        #         )
 
         if action == 1:
             reward -= cost_intervention

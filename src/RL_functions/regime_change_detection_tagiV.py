@@ -31,8 +31,8 @@ class TAGI_Net():
         self.net = Sequential(
                     Linear(n_observations, 32),
                     ReLU(),
-                    Linear(32, 32),
-                    ReLU(),
+                    # Linear(32, 32),
+                    # ReLU(),
                     Linear(32, n_actions * 2),
                     EvenExp()
                     )
@@ -118,9 +118,6 @@ class regime_change_detection_tagiV():
                         z_init  = self.init_z,
                         Sz_init = self.init_Sz,
                         use_auto_AR = False,
-                        # Sample phi_AR following a Gaussian with mean self.phi_AR and variance self.trained_BDLM.var_phi_AR
-                        # phi_AR = np.random.normal(self.phi_AR, np.sqrt(self.trained_BDLM.var_phi_AR)),
-                        # Sigma_AR = np.random.normal(self.Sigma_AR, np.sqrt(self.trained_BDLM.var_Sigma_AR)),
                         phi_AR = self.phi_AR,
                         Sigma_AR = self.Sigma_AR,
                         Sigma_AA_ratio = self.Sigma_AA_ratio,
@@ -241,13 +238,12 @@ class regime_change_detection_tagiV():
             mean_R, std_R = self._estimate_R_distribution(num_episodes, validation_episode_num, init_z, init_Sz, init_mu_preds_lstm, init_var_preds_lstm)
             self.mean_R = mean_R
             self.std_R = std_R
-            self.cost_intervention = (1+self.GAMMA)*(self.mean_R + self.std_R)/(1-self.GAMMA) # 11.608093917361542 # self.mean_Q + self.std_Q
             print('The mean and std of R:', mean_R, std_R)
             print('=====================================')
         else:
             self.mean_R = mean_R
             self.std_R = std_R
-            self.cost_intervention = (1+self.GAMMA)*(self.mean_R + self.std_R)/(1-self.GAMMA)
+        self.cost_intervention = 1*(self.mean_R + self.std_R)/(1-self.GAMMA)
 
         for i_episode in range(num_episodes-validation_episode_num):
             anm_pos = np.random.randint(step_look_back + self.trained_BDLM.input_seq_len, int((num_steps_per_episode-step_look_back + self.trained_BDLM.input_seq_len)/2))
@@ -291,7 +287,7 @@ class regime_change_detection_tagiV():
 
             state, info = env.reset(z=init_z, Sz=init_Sz, mu_preds_lstm = copy.deepcopy(init_mu_preds_lstm), var_preds_lstm = copy.deepcopy(init_var_preds_lstm),
                         net_test = self.LSTM_test_net, init_mu_W2b = None, init_var_W2b = None, phi_AR = self.phi_AR, Sigma_AR = self.Sigma_AR,
-                        phi_AA = self.phi_AA, Sigma_AA_ratio = self.Sigma_AA_ratio)
+                        phi_AA = self.phi_AA, Sigma_AA_ratio = self.Sigma_AA_ratio, use_BAR = self.trained_BDLM.use_BAR, input_BAR = self.trained_BDLM.input_BAR)
             state = state['hidden_states']
             state = torch.tensor(state, dtype=torch.float32, device=self.device).unsqueeze(0)
 
@@ -301,8 +297,8 @@ class regime_change_detection_tagiV():
             LA_var_stationary = self.trained_BDLM.Sigma_AA_ratio *  self.trained_BDLM.Sigma_AR/(1 - self.trained_BDLM.phi_AA**2)
             if step_look_back == 64:
                 seg_len = 8
-            state = normalize_tensor_two_parts(state, 0, np.sqrt(LA_var_stationary), \
-                                            0, AR_std_stationary, seg_len)
+            # state = normalize_tensor_two_parts(state, 0, np.sqrt(LA_var_stationary), \
+            #                                 0, AR_std_stationary, seg_len)
 
             total_reward_one_episode = 0
             dummy_steps = 0
@@ -338,8 +334,8 @@ class regime_change_detection_tagiV():
                 else:
                     next_state = torch.tensor(observation['hidden_states'],\
                             dtype=torch.float32, device=self.device).unsqueeze(0)
-                    next_state = normalize_tensor_two_parts(next_state, 0, np.sqrt(LA_var_stationary),\
-                                                            0, AR_std_stationary, seg_len)
+                    # next_state = normalize_tensor_two_parts(next_state, 0, np.sqrt(LA_var_stationary),\
+                    #                                         0, AR_std_stationary, seg_len)
 
                 # Store the transition in memory
                 self.memory.push(state, action, next_state, reward)
@@ -386,12 +382,13 @@ class regime_change_detection_tagiV():
                 if True:
                     # Plot prediction
                     fig = plt.figure(figsize=(15, 12))
-                    gs = gridspec.GridSpec(5, 1)
+                    gs = gridspec.GridSpec(6, 1)
                     ax0 = plt.subplot(gs[0])
-                    ax1 = plt.subplot(gs[2])
-                    ax2 = plt.subplot(gs[3])
-                    ax3 = plt.subplot(gs[4])
+                    ax1 = plt.subplot(gs[3])
+                    ax2 = plt.subplot(gs[5])
+                    ax3 = plt.subplot(gs[2])
                     ax4 = plt.subplot(gs[1])
+                    ax5 = plt.subplot(gs[4])
 
                     ax0.plot(timesteps, info['measurement_one_episode'], label='True')
                     # plot the standard deviation of the prediction
@@ -409,21 +406,28 @@ class regime_change_detection_tagiV():
                         ax0.axvline(x=anomaly_pos2, color='gray', linestyle='--')
                     ax0.legend()
 
-                    ax1.plot(timesteps, mu_hidden_states_one_episode[:,2], label='LA')
-                    ax1.fill_between(timesteps, mu_hidden_states_one_episode[:,2] - np.sqrt(var_hidden_states_one_episode[:,2,2]),\
-                                        mu_hidden_states_one_episode[:,2] + np.sqrt(var_hidden_states_one_episode[:,2,2]), color='gray', alpha=0.2)
-                    ax1.set_ylabel('LA')
-
-                    ax2.plot(timesteps, mu_hidden_states_one_episode[:,-1], label='PD')
-                    ax2.fill_between(timesteps, mu_hidden_states_one_episode[:,-1] - np.sqrt(var_hidden_states_one_episode[:,-1,-1]),\
-                                        mu_hidden_states_one_episode[:,-1] + np.sqrt(var_hidden_states_one_episode[:,-1,-1]), color='gray', alpha=0.2)
+                    ax2.plot(timesteps, mu_hidden_states_one_episode[:,1], label='PD')
+                    ax2.fill_between(timesteps, mu_hidden_states_one_episode[:,1] - np.sqrt(var_hidden_states_one_episode[:,1,1]),\
+                                        mu_hidden_states_one_episode[:,1] + np.sqrt(var_hidden_states_one_episode[:,1,1]), color='gray', alpha=0.2)
                     ax2.set_ylabel('PD')
 
-                    ax3.fill_between(timesteps, np.zeros_like(timesteps)-3*AR_std_stationary, np.zeros_like(timesteps)+3*AR_std_stationary, color='red', alpha=0.1)
+                    ax3.fill_between(timesteps, np.zeros_like(timesteps)-2*AR_std_stationary, np.zeros_like(timesteps)+2*AR_std_stationary, color='red', alpha=0.1)
                     ax3.plot(timesteps, mu_hidden_states_one_episode[:,-2], label='AR')
                     ax3.fill_between(timesteps, mu_hidden_states_one_episode[:,-2] - np.sqrt(var_hidden_states_one_episode[:,-2,-2]),\
                                         mu_hidden_states_one_episode[:,-2] + np.sqrt(var_hidden_states_one_episode[:,-2,-2]), color='gray', alpha=0.2)
                     ax3.set_ylabel('AR')
+
+                    ax1.fill_between(timesteps, np.zeros_like(timesteps)-2*AR_std_stationary, np.zeros_like(timesteps)+2*AR_std_stationary, color='red', alpha=0.1)
+                    ax1.plot(timesteps, mu_hidden_states_one_episode[:,2], label='BAR')
+                    ax1.fill_between(timesteps, mu_hidden_states_one_episode[:,2] - np.sqrt(var_hidden_states_one_episode[:,2,2]),\
+                                        mu_hidden_states_one_episode[:,2] + np.sqrt(var_hidden_states_one_episode[:,2,2]), color='gray', alpha=0.2)
+                    ax1.set_ylabel('BAR')
+                    ax1.set_ylim(ax3.get_ylim())
+
+                    ax5.plot(timesteps, mu_hidden_states_one_episode[:,3], label='ITV')
+                    ax5.fill_between(timesteps, mu_hidden_states_one_episode[:,3] - np.sqrt(var_hidden_states_one_episode[:,3,3]),\
+                                        mu_hidden_states_one_episode[:,3] + np.sqrt(var_hidden_states_one_episode[:,3,3]), color='gray', alpha=0.2)
+                    ax5.set_ylabel('ITV')
 
                     ax4.plot(Q_values_all[0], label='Q_value_0')
                     ax4.plot(Q_values_all[1], label='Q_value_1')
@@ -482,7 +486,7 @@ class regime_change_detection_tagiV():
                         env = LSTM_KF_Env(render_mode=None, data_loader=train_dtl, step_look_back=step_look_back)
                         state, info = env.reset(z=init_z, Sz=init_Sz, mu_preds_lstm = copy.deepcopy(init_mu_preds_lstm), var_preds_lstm = copy.deepcopy(init_var_preds_lstm),
                                     net_test = self.LSTM_test_net, init_mu_W2b = None, init_var_W2b = None, phi_AR = self.phi_AR, Sigma_AR = self.Sigma_AR,
-                                    phi_AA = self.phi_AA, Sigma_AA_ratio = self.Sigma_AA_ratio)
+                                    phi_AA = self.phi_AA, Sigma_AA_ratio = self.Sigma_AA_ratio, use_BAR = self.trained_BDLM.use_BAR, input_BAR = self.trained_BDLM.input_BAR)
 
                         # Nomalize the state
                         AR_std_stationary = np.sqrt(self.trained_BDLM.Sigma_AR/(1 - self.trained_BDLM.phi_AR**2))
@@ -493,8 +497,8 @@ class regime_change_detection_tagiV():
                         for t in count():
                             state = torch.tensor(state['hidden_states'],\
                                 dtype=torch.float32, device='cpu').unsqueeze(0)
-                            state = normalize_tensor_two_parts(state, 0, np.sqrt(LA_var_stationary),\
-                                                                0, AR_std_stationary, seg_len)
+                            # state = normalize_tensor_two_parts(state, 0, np.sqrt(LA_var_stationary),\
+                            #                                     0, AR_std_stationary, seg_len)
 
                             action = self._select_action(state, greedy=True)
                             state, _, terminated, truncated, info = env.step(action.item(), cost_intervention=self.cost_intervention)
@@ -581,7 +585,7 @@ class regime_change_detection_tagiV():
 
         state, _ = env.reset(z=init_z, Sz=init_Sz, mu_preds_lstm = copy.deepcopy(init_mu_preds_lstm), var_preds_lstm = copy.deepcopy(init_var_preds_lstm),
                                 net_test = self.LSTM_test_net, init_mu_W2b = None, init_var_W2b = None, phi_AR=self.trained_BDLM.phi_AR, Sigma_AR=self.trained_BDLM.Sigma_AR,
-                                phi_AA = self.trained_BDLM.phi_AA, Sigma_AA_ratio = self.trained_BDLM.Sigma_AA_ratio)
+                                phi_AA = self.trained_BDLM.phi_AA, Sigma_AA_ratio = self.trained_BDLM.Sigma_AA_ratio, use_BAR = self.trained_BDLM.use_BAR, input_BAR = self.trained_BDLM.input_BAR)
 
         intervention_index =[]
         LA_var_stationary = self.trained_BDLM.Sigma_AA_ratio *  self.trained_BDLM.Sigma_AR/(1 - self.trained_BDLM.phi_AA**2)
@@ -595,8 +599,8 @@ class regime_change_detection_tagiV():
         for t in count():
             state = torch.tensor(state['hidden_states'],\
                                 dtype=torch.float32, device='cpu').unsqueeze(0)
-            state = normalize_tensor_two_parts(state, 0, np.sqrt(LA_var_stationary),\
-                                                0, AR_std_stationary, seg_len)
+            # state = normalize_tensor_two_parts(state, 0, np.sqrt(LA_var_stationary),\
+            #                                     0, AR_std_stationary, seg_len)
 
             # Select action
             action = self._select_action(state, greedy=True)
@@ -728,7 +732,7 @@ class regime_change_detection_tagiV():
             env = LSTM_KF_Env(render_mode=None, data_loader=train_dtl, step_look_back=step_look_back)
             env.reset(z=init_z, Sz=init_Sz, mu_preds_lstm = copy.deepcopy(init_mu_preds_lstm), var_preds_lstm = copy.deepcopy(init_var_preds_lstm),
                         net_test = self.LSTM_test_net, init_mu_W2b = None, init_var_W2b = None, phi_AR = self.phi_AR, Sigma_AR = self.Sigma_AR,
-                        phi_AA = self.phi_AA, Sigma_AA_ratio = self.Sigma_AA_ratio)
+                        phi_AA = self.phi_AA, Sigma_AA_ratio = self.Sigma_AA_ratio, use_BAR = self.trained_BDLM.use_BAR, input_BAR = self.trained_BDLM.input_BAR)
             Q_estimate = 0
             for t in count():
                 _, reward, terminated, truncated, _ = env.step(0)
@@ -768,7 +772,7 @@ class regime_change_detection_tagiV():
             env = LSTM_KF_Env(render_mode=None, data_loader=train_dtl, step_look_back=step_look_back)
             env.reset(z=init_z, Sz=init_Sz, mu_preds_lstm = copy.deepcopy(init_mu_preds_lstm), var_preds_lstm = copy.deepcopy(init_var_preds_lstm),
                         net_test = self.LSTM_test_net, init_mu_W2b = None, init_var_W2b = None, phi_AR = self.phi_AR, Sigma_AR = self.Sigma_AR,
-                        phi_AA = self.phi_AA, Sigma_AA_ratio = self.Sigma_AA_ratio)
+                        phi_AA = self.phi_AA, Sigma_AA_ratio = self.Sigma_AA_ratio, use_BAR = self.trained_BDLM.use_BAR, input_BAR = self.trained_BDLM.input_BAR)
             for t in count():
                 _, reward, terminated, truncated, _ = env.step(0)
                 R_estimates.append(reward)

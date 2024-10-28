@@ -26,6 +26,8 @@ class BDLM_trainer:
         self.phi_AA = kwargs.get('phi_AA', 0.999)
         self.components = kwargs.get('components', 'AA + AR')
         self.use_auto_AR = kwargs.get('use_auto_AR', True)
+        self.use_BAR = kwargs.get('use_BAR', False)
+        self.input_BAR = kwargs.get('input_BAR', False)
 
     def load_datasets(self, observation_file_paths, datetime_file_paths, time_covariates):
         self.observation_file_paths = observation_file_paths
@@ -107,6 +109,8 @@ class BDLM_trainer:
             hybrid = LSTM_SSM(
                 neural_network = net,           # LSTM
                 baseline = self.components, # 'level', 'trend', 'acceleration', 'ETS'
+                use_BAR=self.use_BAR,
+                input_BAR=self.input_BAR,
                 # zB  = np.array([self.level_init, self.speed_init, 0, 0.5, -0.05]),
                 zB  = np.array([self.level_init, self.speed_init, 0, 0.7, 0.02]),
                 SzB = np.array([1E-5, 1E-8, LA_var_stationary, 0.1**2, 0.15**2]),
@@ -120,6 +124,8 @@ class BDLM_trainer:
             hybrid = LSTM_SSM(
                 neural_network = net,           # LSTM
                 baseline = self.components, # 'level', 'trend', 'acceleration', 'ETS'
+                use_BAR=self.use_BAR,
+                input_BAR=self.input_BAR,
                 # zB  = np.array([self.level_init, self.speed_init, 0, 0.5, -0.05]),
                 zB  = initial_z,
                 SzB = initial_Sz,
@@ -317,6 +323,8 @@ class BDLM_trainer:
                                 zB  = np.array([self.level_init, self.speed_init, 0, 0.7, 0.02]),
                                 SzB = np.array([1E-5, 1E-8, LA_var_stationary, 0.1**2, 0.15**2]),
                                 use_auto_AR = self.use_auto_AR,
+                                use_BAR=self.use_BAR,
+                                input_BAR=self.input_BAR,
                                 mu_W2b_init = 0.3,
                                 var_W2b_init = 0.1**2,
                                 Sigma_AA_ratio = self.Sigma_AA_ratio,
@@ -329,6 +337,8 @@ class BDLM_trainer:
                                 zB  = initial_z,
                                 SzB = initial_Sz,
                                 use_auto_AR = self.use_auto_AR,
+                                use_BAR=self.use_BAR,
+                                input_BAR=self.input_BAR,
                                 mu_W2b_init = 0.25,
                                 var_W2b_init = 0.25**2,
                                 Sigma_AA_ratio = self.Sigma_AA_ratio,
@@ -517,7 +527,7 @@ class BDLM_trainer:
         if initial_z is None and initial_Sz is None:
             hybrid_test = LSTM_SSM(
                 neural_network = self.net_test,           # LSTM
-                baseline = 'AA + AR_fixed', # 'level', 'trend', 'acceleration', 'ETS'
+                baseline = 'LT + BAR + ITV + AR_fixed', # 'level', 'trend', 'acceleration', 'ETS'
                 zB  = np.array([self.level_init, self.speed_init, 0, 0.02]),
                 SzB = np.array([1E-5, 1E-8, LA_var_stationary, AR_var_stationary]),
                 phi_AR = self.phi_AR,
@@ -525,11 +535,13 @@ class BDLM_trainer:
                 Sigma_AA_ratio = self.Sigma_AA_ratio,
                 phi_AA = self.phi_AA,
                 use_auto_AR = False,
+                use_BAR=self.use_BAR,
+                input_BAR=self.input_BAR,
             )
         else:
             hybrid_test = LSTM_SSM(
                 neural_network = self.net_test,           # LSTM
-                baseline = 'AA + AR_fixed', # 'level', 'trend', 'acceleration', 'ETS'
+                baseline = 'LT + BAR + ITV + AR_fixed', # 'level', 'trend', 'acceleration', 'ETS'
                 zB  = initial_z,
                 SzB = initial_Sz,
                 phi_AR = self.phi_AR,
@@ -537,6 +549,8 @@ class BDLM_trainer:
                 Sigma_AA_ratio = self.Sigma_AA_ratio,
                 phi_AA = self.phi_AA,
                 use_auto_AR = False,
+                use_BAR=self.use_BAR,
+                input_BAR=self.input_BAR,
             )
 
         # Run the model on the training set + validation set again without training the LSTM, in ordr to get the initial states for the test set
@@ -643,7 +657,7 @@ class BDLM_trainer:
             ax1.fill_between(np.arange(len(mu_LL)), np.array(mu_LL) - np.sqrt(var_LL), np.array(mu_LL) + np.sqrt(var_LL), color='blue', alpha=0.3, label='±1 SD')
             ax1.set_ylabel('LL')
 
-            ax2.fill_between(np.arange(len(mu_AR)), np.zeros_like(len(mu_AR))-3*np.sqrt(AR_var_stationary), np.zeros_like(len(mu_AR))+3*np.sqrt(AR_var_stationary), color='red', alpha=0.1)
+            ax2.fill_between(np.arange(len(mu_AR)), np.zeros_like(len(mu_AR))-2*np.sqrt(AR_var_stationary), np.zeros_like(len(mu_AR))+2*np.sqrt(AR_var_stationary), color='red', alpha=0.1)
             ax2.plot(np.arange(len(mu_AR)),mu_AR,color='b',label=r"AR")
             ax2.fill_between(np.arange(len(mu_AR)), np.array(mu_AR) - np.sqrt(var_AR), np.array(mu_AR) + np.sqrt(var_AR), color='blue', alpha=0.3, label='±1 SD')
             ax2.set_ylabel('AR')
@@ -664,7 +678,7 @@ class BDLM_trainer:
         LA_var_stationary = self.Sigma_AA_ratio*self.Sigma_AR/(1-self.phi_AA**2)
         hybrid_test = LSTM_SSM(
             neural_network = self.net_test,           # LSTM
-            baseline = 'AA + AR_fixed', # 'level', 'trend', 'acceleration', 'ETS'
+            baseline = 'LT + BAR + ITV + AR_fixed', # 'level', 'trend', 'acceleration', 'ETS'
             z_init = self.init_z,
             Sz_init = self.init_Sz,
             phi_AR = self.phi_AR,
@@ -672,6 +686,8 @@ class BDLM_trainer:
             use_auto_AR = False,
             Sigma_AA_ratio = self.Sigma_AA_ratio,
             phi_AA = self.phi_AA,
+            use_BAR=self.use_BAR,
+            input_BAR=self.input_BAR,
         )
 
         # hybrid_test = LSTM_SSM(
@@ -700,9 +716,11 @@ class BDLM_trainer:
         var_lstm = copy.deepcopy(self.init_var_lstm)
         mu_AA = []
         var_AA = []
+        mu_delta = []
+        var_delta = []
 
         hybrid_test.init_ssm_hs()
-        for x, y in batch_iter:
+        for i, (x, y) in enumerate(batch_iter):
             mu_x, var_x = process_input_ssm(
                 mu_x = x, mu_preds_lstm = mu_lstm, var_preds_lstm = var_lstm,
                 input_seq_len = self.input_seq_len, num_features = self.num_features,
@@ -724,6 +742,9 @@ class BDLM_trainer:
             var_AR.append(Sz_pred[-2][-2])
             mu_lstm.extend(m_pred)
             var_lstm.extend(v_pred)
+            mu_delta.append(z_pred[3].item())
+            var_delta.append(Sz_pred[3][3])
+
         # Delete the first len(init_mu_lstm) elements in mu_lstm and var_lstm
         mu_lstm = mu_lstm[len(self.init_mu_lstm):]
         var_lstm = var_lstm[len(self.init_var_lstm):]
@@ -732,12 +753,13 @@ class BDLM_trainer:
 
         if plot:
             fig = plt.figure(figsize=(10, 8))
-            gs = gridspec.GridSpec(5, 1)
+            gs = gridspec.GridSpec(6, 1)
             ax0 = plt.subplot(gs[0])
             ax1 = plt.subplot(gs[1])
             ax2 = plt.subplot(gs[2])
             ax3 = plt.subplot(gs[3])
             ax4 = plt.subplot(gs[4])
+            ax5 = plt.subplot(gs[5])
 
             ax0.plot(np.arange(len(obs_norm)),obs_norm,color='b',label=r"obs")
             ax0.plot(np.arange(len(mu_LL)),mu_LL,color='b',label=r"LL")
@@ -756,14 +778,20 @@ class BDLM_trainer:
 
             ax3.plot(np.arange(len(mu_AR)),mu_AR,color='b',label=r"AR")
             ax3.fill_between(np.arange(len(mu_AR)), np.array(mu_AR) - np.sqrt(var_AR), np.array(mu_AR) + np.sqrt(var_AR), color='blue', alpha=0.3, label='±1 SD')
-            ax3.fill_between(np.arange(len(mu_AR)), np.zeros_like(len(mu_AR))-3*np.sqrt(AR_var_stationary), np.zeros_like(len(mu_AR))+3*np.sqrt(AR_var_stationary), color='red', alpha=0.1)
+            ax3.fill_between(np.arange(len(mu_AR)), np.zeros_like(len(mu_AR))-2*np.sqrt(AR_var_stationary), np.zeros_like(len(mu_AR))+2*np.sqrt(AR_var_stationary), color='red', alpha=0.1)
             ax3.set_ylabel('AR')
             # ax3.set_ylim(-1.1, 1.1)
 
             ax4.plot(np.arange(len(mu_AA)),mu_AA,color='b',label=r"AA")
             ax4.fill_between(np.arange(len(mu_AA)), np.array(mu_AA) - np.sqrt(var_AA), np.array(mu_AA) + np.sqrt(var_AA), color='blue', alpha=0.3, label='±1 SD')
-            ax4.set_ylabel('AA')
+            ax4.fill_between(np.arange(len(mu_AR)), np.zeros_like(len(mu_AR))-2*np.sqrt(AR_var_stationary), np.zeros_like(len(mu_AR))+2*np.sqrt(AR_var_stationary), color='red', alpha=0.1)
+            ax4.set_ylim(ax3.get_ylim())
+            ax4.set_ylabel('BAR')
 
-            ax0.set_title('Check if AA is correctly')
+            ax5.plot(np.arange(len(mu_delta)),mu_delta,color='b',label=r"delta")
+            ax5.fill_between(np.arange(len(mu_delta)), np.array(mu_delta) - np.sqrt(var_delta), np.array(mu_delta) + np.sqrt(var_delta), color='blue', alpha=0.3, label='±1 SD')
+            ax5.set_ylabel('delta')
+
+            ax0.set_title('Check if intervention is correctly')
 
 

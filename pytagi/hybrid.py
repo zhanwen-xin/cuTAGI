@@ -6,6 +6,8 @@ import matplotlib.pyplot as plt
 import pandas as pd
 from pytagi.gma_utils import GMA
 from pytagi.cdf_activate import cdf_activate
+from src.RL_functions.bounded_AR import BAR
+import copy
 
 class LSTM_SSM:
     """State-space models for modeling baselines:
@@ -28,6 +30,8 @@ class LSTM_SSM:
         phi_AR: Optional[float] = 0.75,
         Sigma_AR: Optional[float] = 0.05,
         use_auto_AR: Optional[bool] = False,
+        use_BAR: Optional[bool] = False,
+        input_BAR: Optional[list] = None,
         mu_W2b_init: Optional[float] = 0,
         var_W2b_init: Optional[float] = 0,
     ) -> None:
@@ -49,6 +53,8 @@ class LSTM_SSM:
         self.phi_AR = phi_AR
         self.Sigma_AR = Sigma_AR
         self.use_auto_AR = use_auto_AR
+        self.use_BAR = use_BAR
+        self.input_BAR = input_BAR
         self.mu_W2b_init = mu_W2b_init
         self.var_W2b_init = var_W2b_init
         self.mu_W2b_posterior = mu_W2b_init
@@ -91,11 +97,34 @@ class LSTM_SSM:
             # You have to add Q after multiply phi_AR with x_AR from last time step.
             # Otherwise it will not learn.
             Sz_prior = Sz_prior + self.Q
-
             # sigma_AR
             self.mu_W2b_prior = self.mu_W2b_posterior
             self.var_W2b_prior = self.var_W2b_posterior
             self.mu_h_prior = np.append(z_prior, np.array([[0]]), axis=0)
+
+            if self.use_BAR:
+                gamma_val = self.input_BAR[0]
+                AR_pos = self.input_BAR[1]
+                BAR_pos = self.input_BAR[2]
+
+                # Covariance between AR and all other components except at the BAR_pos and BAR_pos + 1
+                cov_AR_others = Sz_prior[AR_pos, :]
+                cov_AR_others = np.delete(cov_AR_others, BAR_pos) # Remove the covariance with BAR
+                # cov_AR_others = np.delete(cov_AR_others, BAR_pos) # Remove the covariance with ITV
+                cov_AR_others = np.delete(cov_AR_others, -1)      # Remove the covariance with LSTM
+                muBAR_t_t_, covBAR_t_t_, cov_X_XBAR_t_t=BAR(z_prior[AR_pos],cov_AR_others,gamma_val, z_prior[-3], self.mu_W2b_prior)
+                covBAR_t_t_ = covBAR_t_t_.item()
+                cov_X_XBAR_t_t = np.append(cov_X_XBAR_t_t, 0)
+                cov_X_XBAR_t_t = np.insert(cov_X_XBAR_t_t, BAR_pos, covBAR_t_t_)
+                # cov_X_XBAR_t_t = np.insert(cov_X_XBAR_t_t, BAR_pos+1, 0) # Dummy covariance for ITV for now
+                z_prior[BAR_pos] = muBAR_t_t_
+                Sz_prior[BAR_pos, :] = cov_X_XBAR_t_t
+                Sz_prior[:, BAR_pos] = cov_X_XBAR_t_t
+
+                # Compute AR-BAR, and put it in the ITV position, BAR_pos + 1
+                z_prior[BAR_pos+1] = z_prior[AR_pos] - z_prior[BAR_pos]
+                Sz_prior[BAR_pos+1, BAR_pos+1] = Sz_prior[AR_pos, AR_pos] + Sz_prior[BAR_pos, BAR_pos] - 2 * Sz_prior[AR_pos, BAR_pos]
+
             h_size = Sz_prior.shape[0] + 1
             self.cov_h_prior = np.zeros((h_size, h_size))
             self.cov_h_prior[:-1, :-1] = Sz_prior
@@ -107,6 +136,28 @@ class LSTM_SSM:
             self.var_W2_prior = 3 * self.var_W2b_posterior + 2 * self.mu_W2b_posterior**2
         else:
             Sz_prior = Sz_prior + self.Q
+            if self.use_BAR:
+                gamma_val = self.input_BAR[0]
+                AR_pos = self.input_BAR[1]
+                BAR_pos = self.input_BAR[2]
+
+                # Covariance between AR and all other components except at the BAR_pos and BAR_pos + 1
+                cov_AR_others = Sz_prior[AR_pos, :]
+                cov_AR_others = np.delete(cov_AR_others, BAR_pos) # Remove the covariance with BAR
+                cov_AR_others = np.delete(cov_AR_others, BAR_pos) # Remove the covariance with ITV
+                cov_AR_others = np.delete(cov_AR_others, -1)      # Remove the covariance with LSTM
+                muBAR_t_t_, covBAR_t_t_, cov_X_XBAR_t_t = BAR(z_prior[AR_pos],cov_AR_others,gamma_val, self.phi_AR, self.Sigma_AR)
+                covBAR_t_t_ = covBAR_t_t_.item()
+                cov_X_XBAR_t_t = np.append(cov_X_XBAR_t_t, 0)
+                cov_X_XBAR_t_t = np.insert(cov_X_XBAR_t_t, BAR_pos, covBAR_t_t_)
+                cov_X_XBAR_t_t = np.insert(cov_X_XBAR_t_t, BAR_pos+1, 0) # Dummy covariance for ITV for now
+                z_prior[BAR_pos] = muBAR_t_t_
+                Sz_prior[BAR_pos, :] = cov_X_XBAR_t_t
+                Sz_prior[:, BAR_pos] = cov_X_XBAR_t_t
+
+                # Compute AR-BAR, and put it in the ITV position, BAR_pos + 1
+                z_prior[BAR_pos+1] = z_prior[AR_pos] - z_prior[BAR_pos]
+                Sz_prior[BAR_pos+1, BAR_pos+1] = Sz_prior[AR_pos, AR_pos] + Sz_prior[BAR_pos, BAR_pos] - 2 * Sz_prior[AR_pos, BAR_pos]
 
         # Predicted mean and var
         m_pred = self.F @ z_prior
@@ -148,7 +199,6 @@ class LSTM_SSM:
                 # detla for mean and var to update LSTM (parameters in net)
                 delta_mean_lstm = delta_mean[-1,-1]/var_lstm
                 delta_var_lstm  = delta_var[-1,-1]/var_lstm**2
-
                 # # update lstm network
                 if train_LSTM:
                     self.net.input_delta_z_buffer.delta_mu = np.array([delta_mean_lstm]).flatten()
@@ -209,24 +259,97 @@ class LSTM_SSM:
         self.cov_posteriors.append(Sz_posterior)
         return z_posterior, Sz_posterior
 
+    # def smoother(self):
+    #     nb_obs = len(self.mu_priors)
+    #     nb_hs = self.nb_hs
+    #     mu_smoothed  = [None] * nb_obs
+    #     cov_smoothed = [None] * nb_obs
+    #     mu_smoothed[-1] = self.mu_posteriors[-1]
+    #     cov_smoothed[-1] = self.cov_posteriors[-1]
+    #     A = self.A
+
+    #     for i in range(nb_obs-2,-1,-1):
+    #         J = self.cov_posteriors[i] @ A.T \
+    #             @ pinv(self.cov_priors[i+1],rcond=1e-6)
+    #         mu_smoothed[i] = self.mu_posteriors[i] \
+    #             + J @ (mu_smoothed[i+1] - self.mu_priors[i+1])
+    #         cov_ = self.cov_posteriors[i] + \
+    #             J @ (cov_smoothed[i+1] - self.cov_priors[i+1]) @ J.T
+    #         cov_smoothed[i] = cov_
+
+    #         print(cov_smoothed[i].shape)
+    #         print(mu_smoothed[i].shape)
+
+    #     self.mu_smoothed  = mu_smoothed
+    #     self.cov_smoothed = cov_smoothed
+
     def smoother(self):
+        # Only smooth the hidden states other than BAR and ITV
         nb_obs = len(self.mu_priors)
         nb_hs = self.nb_hs
         mu_smoothed  = [None] * nb_obs
         cov_smoothed = [None] * nb_obs
         mu_smoothed[-1] = self.mu_posteriors[-1]
         cov_smoothed[-1] = self.cov_posteriors[-1]
-        A = self.A
+        A_short = copy.deepcopy(self.A)
+        AR_pos = self.input_BAR[1]
+        BAR_pos = self.input_BAR[2]
+        # Exclude BAR_pos and BAR_pos + 1 in the 2*2 matrix A
+        A_short = np.delete(A_short, BAR_pos+1, axis=0)
+        A_short = np.delete(A_short, BAR_pos+1, axis=1)
+        A_short = np.delete(A_short, BAR_pos, axis=0)
+        A_short = np.delete(A_short, BAR_pos, axis=1)
 
         for i in range(nb_obs-2,-1,-1):
-            J = self.cov_posteriors[i] @ A.T \
-                @ pinv(self.cov_priors[i+1],rcond=1e-6)
-            mu_smoothed[i] = self.mu_posteriors[i] \
-                + J @ (mu_smoothed[i+1] - self.mu_priors[i+1])
-            cov_ = self.cov_posteriors[i] + \
-                J @ (cov_smoothed[i+1] - self.cov_priors[i+1]) @ J.T
-            cov_smoothed[i] = cov_
+            cov_prior_short = copy.deepcopy(self.cov_priors[i+1])
+            cov_prior_short = np.delete(cov_prior_short, BAR_pos+1, axis=0)
+            cov_prior_short = np.delete(cov_prior_short, BAR_pos+1, axis=1)
+            cov_prior_short = np.delete(cov_prior_short, BAR_pos, axis=0)
+            cov_prior_short = np.delete(cov_prior_short, BAR_pos, axis=1)
 
+            cov_posterior_short = copy.deepcopy(self.cov_posteriors[i])
+            cov_posterior_short = np.delete(cov_posterior_short, BAR_pos+1, axis=0)
+            cov_posterior_short = np.delete(cov_posterior_short, BAR_pos+1, axis=1)
+            cov_posterior_short = np.delete(cov_posterior_short, BAR_pos, axis=0)
+            cov_posterior_short = np.delete(cov_posterior_short, BAR_pos, axis=1)
+
+            mu_posterior_short = copy.deepcopy(self.mu_posteriors[i])
+            mu_posterior_short = np.delete(mu_posterior_short, BAR_pos+1, axis=0)
+            mu_posterior_short = np.delete(mu_posterior_short, BAR_pos, axis=0)
+
+            mu_smoothed_short_i1  = copy.deepcopy(mu_smoothed[i+1])
+            mu_smoothed_short_i1 = np.delete(mu_smoothed_short_i1, BAR_pos+1, axis=0)
+            mu_smoothed_short_i1 = np.delete(mu_smoothed_short_i1, BAR_pos, axis=0)
+
+            mu_prior_short_i1 = copy.deepcopy(self.mu_priors[i+1])
+            mu_prior_short_i1 = np.delete(mu_prior_short_i1, BAR_pos+1, axis=0)
+            mu_prior_short_i1 = np.delete(mu_prior_short_i1, BAR_pos, axis=0)
+
+            cov_smoothed_short_i1 = copy.deepcopy(cov_smoothed[i+1])
+            cov_smoothed_short_i1 = np.delete(cov_smoothed_short_i1, BAR_pos+1, axis=0)
+            cov_smoothed_short_i1 = np.delete(cov_smoothed_short_i1, BAR_pos+1, axis=1)
+            cov_smoothed_short_i1 = np.delete(cov_smoothed_short_i1, BAR_pos, axis=0)
+            cov_smoothed_short_i1 = np.delete(cov_smoothed_short_i1, BAR_pos, axis=1)
+
+            J = cov_posterior_short @ A_short.T \
+                @ pinv(cov_prior_short,rcond=1e-6)
+            mu_smoothed_short = mu_posterior_short \
+                + J @ (mu_smoothed_short_i1 - mu_prior_short_i1)
+            cov_smoothed_short = cov_posterior_short + \
+                J @ (cov_smoothed_short_i1 - cov_prior_short) @ J.T
+
+            # Compute AR - BAR and put it in the ITV position
+            # Insert cov_itv in the BAR_pos + 1 row and column in cov_smoothed_short
+            cov_ = np.insert(cov_smoothed_short, BAR_pos, 0, axis=0)
+            cov_ = np.insert(cov_, BAR_pos, 0, axis=1)
+            cov_ = np.insert(cov_, BAR_pos+1, 0, axis=0)
+            cov_ = np.insert(cov_, BAR_pos+1, 0, axis=1)
+            cov_[BAR_pos, BAR_pos] = cov_smoothed_short[AR_pos, AR_pos]
+            # var_itv = cov_smoothed_short[AR_pos, AR_pos] + cov_smoothed_short[BAR_pos, BAR_pos] - 2 * cov_smoothed_short[AR_pos, BAR_pos]
+            # cov_[BAR_pos+1, BAR_pos+1] = var_itv
+            cov_smoothed[i] = cov_
+            mu_ = np.insert(mu_smoothed_short, BAR_pos, mu_smoothed_short[AR_pos])
+            mu_smoothed[i] = np.insert(mu_, BAR_pos+1, mu_smoothed_short[AR_pos] - mu_smoothed_short[BAR_pos]).reshape(-1,1)
         self.mu_smoothed  = mu_smoothed
         self.cov_smoothed = cov_smoothed
 
@@ -304,6 +427,17 @@ class LSTM_SSM:
             self.Q = np.zeros((4, 4))
             self.Q[-2,-2] = self.Sigma_AR
             self.F = np.array([1,0,1,1]).reshape(1, -1)
+        elif self.baseline == 'LT + BAR + ITV + AR':
+            self.A = np.array([[1,1,0,0,0,0,0],[0,1,0,0,0,0,0],[0,0,0,0,0,0,0],[0,0,0,0,0,0,0],[0,0,0,0,1,0,0],[0,0,0,0,0,1,0],[0,0,0,0,0,0,0]])
+            self.Q = np.zeros((7,7))
+            self.Q[-2,-2] = self.Sigma_AR
+            self.F = np.array([1,0,0,0,0,1,1]).reshape(1, -1)
+
+        elif self.baseline == 'LT + BAR + ITV + AR_fixed':
+            self.A = np.array([[1,1,0,0,0,0],[0,1,0,0,0,0],[0,0,0,0,0,0],[0,0,0,0,0,0],[0,0,0,0,self.phi_AR,0],[0,0,0,0,0,0]])
+            self.Q = np.zeros((6,6))
+            self.Q[-2,-2] = self.Sigma_AR
+            self.F = np.array([1,0,0,0,1,1]).reshape(1, -1)
 
 
 def process_input_ssm(
