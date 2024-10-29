@@ -31,8 +31,8 @@ class TAGI_Net():
         self.net = Sequential(
                     Linear(n_observations, 32),
                     ReLU(),
-                    # Linear(32, 32),
-                    # ReLU(),
+                    Linear(32, 32),
+                    ReLU(),
                     Linear(32, n_actions * 2),
                     EvenExp()
                     )
@@ -406,10 +406,10 @@ class regime_change_detection_tagiV():
                         ax0.axvline(x=anomaly_pos2, color='gray', linestyle='--')
                     ax0.legend()
 
-                    ax2.plot(timesteps, mu_hidden_states_one_episode[:,1], label='PD')
+                    ax2.plot(timesteps, mu_hidden_states_one_episode[:,1], label='LT')
                     ax2.fill_between(timesteps, mu_hidden_states_one_episode[:,1] - np.sqrt(var_hidden_states_one_episode[:,1,1]),\
                                         mu_hidden_states_one_episode[:,1] + np.sqrt(var_hidden_states_one_episode[:,1,1]), color='gray', alpha=0.2)
-                    ax2.set_ylabel('PD')
+                    ax2.set_ylabel('LT')
 
                     ax3.fill_between(timesteps, np.zeros_like(timesteps)-2*AR_std_stationary, np.zeros_like(timesteps)+2*AR_std_stationary, color='red', alpha=0.1)
                     ax3.plot(timesteps, mu_hidden_states_one_episode[:,-2], label='AR')

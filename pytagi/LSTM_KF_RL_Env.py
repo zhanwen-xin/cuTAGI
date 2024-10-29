@@ -198,30 +198,38 @@ class LSTM_KF_Env(gym.Env):
         info = self._get_info()
 
         # Reward
-        AR_var_stationary = self.ts_model.Sigma_AR / (1 - self.ts_model.phi_AR**2)
-        clip_value_ar = np.log(self._evaluate_standard_gaussian_probability(x = 1*np.sqrt(Sz_update[-2, -2]+AR_var_stationary), \
-                                                                            mu = 0, std=np.sqrt(Sz_update[-2, -2]+AR_var_stationary)))
-        clip_value_la = np.log(self._evaluate_standard_gaussian_probability(x = 1*np.sqrt(Sz_update[2, 2]+self.ts_model.init_Sz[2, 2]), \
-                                                                            mu = 0, std=np.sqrt(Sz_update[2, 2]+self.ts_model.init_Sz[2, 2])))
+        # Exclude -2 component from z_pred, Sz_pred
+        z_pred_excl_AR = np.delete(z_pred, -2)
+        Sz_pred_excl_AR = np.delete(Sz_pred, -2, axis=0)
+        Sz_pred_excl_AR = np.delete(Sz_pred_excl_AR, -2, axis=1)
+        F_exlude_AR = np.delete(self.ts_model.F, -2)
 
-        y_pred_excl_itv = y_pred - z_update[3]
-        Sy_pred_excl_itv = Sy_pred + Sz_update[3, 3] + 2 * Sz_update[3, -2]
+        y_pred_excl_AR = F_exlude_AR @ z_pred_excl_AR
+        Sy_pred_excl_AR = F_exlude_AR @ Sz_pred_excl_AR @ F_exlude_AR.T
+
+        # y_pred_excl_itv = y_pred - z_update[3]
+        # Sy_pred_excl_itv = Sy_pred + Sz_update[3, 3] + 2 * Sz_update[3, -2]
 
         if np.isnan(y):
-            likelihood = norm.pdf(y_pred_excl_itv, loc=y_pred_excl_itv, scale=np.sqrt(Sy_pred_excl_itv))
+            likelihood = norm.pdf(y_pred_excl_AR, loc=y_pred_excl_AR, scale=np.sqrt(Sy_pred_excl_AR))
         else:
-            likelihood = norm.pdf(y, loc=y_pred_excl_itv, scale=np.sqrt(Sy_pred_excl_itv))
+            likelihood = norm.pdf(y, loc=y_pred_excl_AR, scale=np.sqrt(Sy_pred_excl_AR))
 
         reward = float(np.clip(np.log(likelihood),-1e3, np.inf))
 
+        # AR_var_stationary = self.ts_model.Sigma_AR / (1 - self.ts_model.phi_AR**2)
+        # clip_value_ar = np.log(self._evaluate_standard_gaussian_probability(x = 1*np.sqrt(Sz_update[-2, -2]+AR_var_stationary), \
+        #                                                                     mu = 0, std=np.sqrt(Sz_update[-2, -2]+AR_var_stationary)))
+        # if np.isnan(y):
+        #     likelihood = norm.pdf(y_pred, loc=y_pred, scale=np.sqrt(Sy_pred))
+        # else:
+        #     likelihood = norm.pdf(y, loc=y_pred, scale=np.sqrt(Sy_pred))
         # reward = float(
         #         # likelihood
         #         # np.log(likelihood)
         #         np.clip(np.log(likelihood),-1e3, np.inf)
         #         + np.clip(np.log(self._evaluate_standard_gaussian_probability(z_update[-2], 0, np.sqrt(Sz_update[-2, -2]+AR_var_stationary))),\
         #                     -1e3, clip_value_ar) - clip_value_ar\
-        #         + np.clip(np.log(self._evaluate_standard_gaussian_probability(z_update[2], 0, np.sqrt(Sz_update[2, 2]+self.ts_model.init_Sz[2, 2]))),\
-        #                     -1e3, clip_value_la) - clip_value_la\
         #         )
 
         if action == 1:
