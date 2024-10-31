@@ -29,11 +29,14 @@ class TAGI_Net():
     def __init__(self, n_observations, n_actions):
         super(TAGI_Net, self).__init__()
         self.net = Sequential(
-                    Linear(n_observations, 32),
+                    # Linear(n_observations, 32),
+                    Linear(n_observations, 32, gain_weight=0.5, gain_bias=0.5),
                     ReLU(),
-                    Linear(32, 32),
+                    # Linear(32, 32),
+                    Linear(32, 32, gain_weight=0.5, gain_bias=0.5),
                     ReLU(),
-                    Linear(32, n_actions * 2),
+                    # Linear(32, n_actions * 2),
+                    Linear(32, n_actions * 2, gain_weight=0.5, gain_bias=0.5),
                     EvenExp()
                     )
         self.n_actions = n_actions
@@ -51,13 +54,14 @@ class ReplayMemory(object):
         self.memory.append(Transition(*args))
 
     def sample(self, batch_size):
-        return random.sample(self.memory, batch_size)
+        output = random.sample(self.memory, batch_size)
+        return output
 
     def __len__(self):
         return len(self.memory)
 
 class regime_change_detection_tagiV():
-    def __init__(self, **kwargs):
+    def __init__(self, **kwargs):   
         self.trained_BDLM = kwargs.get('trained_BDLM', None)
         self.val_datetime_values = kwargs.get('val_datetime_values', None)
 
@@ -222,6 +226,7 @@ class regime_change_detection_tagiV():
         optim_episode = early_stop_start
         # Set seed for numpy random
         np.random.seed(0)
+        random.seed(0)      # Random seed for sampling batches
         validation_rand_samples = [np.random.random() for _ in range(validation_episode_num)]
         anm_mag_ratio = 0.94
         anm_mag_ratio_pow = 1
@@ -231,7 +236,14 @@ class regime_change_detection_tagiV():
         # print(anm_positions_val)
         # print(anm_magnitudes_val)
 
-        np.random.seed(int(time.time() * 1000)% (2**32 - 1))
+        # Fixed the randomness in training set
+        anm_positions_train = np.random.randint(step_look_back + self.trained_BDLM.input_seq_len, 
+                                                   int((num_steps_per_episode-step_look_back + self.trained_BDLM.input_seq_len)/2), 
+                                                   num_episodes-validation_episode_num)
+        anm_magnitudes_train = np.random.uniform(anomaly_range[0], anomaly_range[1], (num_episodes-validation_episode_num, 2))
+
+        # np.random.seed(int(time.time() * 1000)% (2**32 - 1))
+
         # Estimatethe cost of intervention
         if mean_R is None or std_R is None:
             print('Estimating the R distribution...')
@@ -246,7 +258,8 @@ class regime_change_detection_tagiV():
         self.cost_intervention = 1*(self.mean_R + self.std_R)/(1-self.GAMMA)
 
         for i_episode in range(num_episodes-validation_episode_num):
-            anm_pos = np.random.randint(step_look_back + self.trained_BDLM.input_seq_len, int((num_steps_per_episode-step_look_back + self.trained_BDLM.input_seq_len)/2))
+            # anm_pos = np.random.randint(step_look_back + self.trained_BDLM.input_seq_len, int((num_steps_per_episode-step_look_back + self.trained_BDLM.input_seq_len)/2))
+            anm_pos = anm_positions_train[i_episode]
 
             sample = random.random()
             if sample < abnormal_ts_percentage:
@@ -255,7 +268,8 @@ class regime_change_detection_tagiV():
                     select_column=i_episode,
                     date_time_file=self.datetime_save_path,
                     add_anomaly = True,
-                    anomaly_magnitude=[np.random.uniform(anomaly_range[0], anomaly_range[1]), np.random.uniform(anomaly_range[0], anomaly_range[1])],
+                    # anomaly_magnitude=[np.random.uniform(anomaly_range[0], anomaly_range[1]), np.random.uniform(anomaly_range[0], anomaly_range[1])],
+                    anomaly_magnitude=anm_magnitudes_train[i_episode],
                     anomaly_start=anm_pos,
                     x_mean=self.trained_BDLM.train_dtl.x_mean,
                     x_std=self.trained_BDLM.train_dtl.x_std,
@@ -297,8 +311,7 @@ class regime_change_detection_tagiV():
             LA_var_stationary = self.trained_BDLM.Sigma_AA_ratio *  self.trained_BDLM.Sigma_AR/(1 - self.trained_BDLM.phi_AA**2)
             if step_look_back == 64:
                 seg_len = 8
-            # state = normalize_tensor_two_parts(state, 0, np.sqrt(LA_var_stationary), \
-            #                                 0, AR_std_stationary, seg_len)
+            state = normalize_tensor_two_parts(state, 0, 1, 0, AR_std_stationary, seg_len)
 
             total_reward_one_episode = 0
             dummy_steps = 0
@@ -334,8 +347,7 @@ class regime_change_detection_tagiV():
                 else:
                     next_state = torch.tensor(observation['hidden_states'],\
                             dtype=torch.float32, device=self.device).unsqueeze(0)
-                    # next_state = normalize_tensor_two_parts(next_state, 0, np.sqrt(LA_var_stationary),\
-                    #                                         0, AR_std_stationary, seg_len)
+                    next_state = normalize_tensor_two_parts(next_state, 0, 1, 0, AR_std_stationary, seg_len)
 
                 # Store the transition in memory
                 self.memory.push(state, action, next_state, reward)
@@ -497,8 +509,7 @@ class regime_change_detection_tagiV():
                         for t in count():
                             state = torch.tensor(state['hidden_states'],\
                                 dtype=torch.float32, device='cpu').unsqueeze(0)
-                            # state = normalize_tensor_two_parts(state, 0, np.sqrt(LA_var_stationary),\
-                            #                                     0, AR_std_stationary, seg_len)
+                            state = normalize_tensor_two_parts(state, 0, 1, 0, AR_std_stationary, seg_len)
 
                             action = self._select_action(state, greedy=True)
                             state, _, terminated, truncated, info = env.step(action.item(), cost_intervention=self.cost_intervention)
@@ -599,8 +610,7 @@ class regime_change_detection_tagiV():
         for t in count():
             state = torch.tensor(state['hidden_states'],\
                                 dtype=torch.float32, device='cpu').unsqueeze(0)
-            # state = normalize_tensor_two_parts(state, 0, np.sqrt(LA_var_stationary),\
-            #                                     0, AR_std_stationary, seg_len)
+            state = normalize_tensor_two_parts(state, 0, 1, 0, AR_std_stationary, seg_len)
 
             # Select action
             action = self._select_action(state, greedy=True)
@@ -663,10 +673,10 @@ class regime_change_detection_tagiV():
         ax0.legend(handles, labels, loc='upper center', bbox_to_anchor=(1.07,1))
 
 
-        ax1.plot(timesteps, mu_hidden_states_one_episode[:,2], label='LA')
-        ax1.fill_between(timesteps, mu_hidden_states_one_episode[:,2] - np.sqrt(var_hidden_states_one_episode[:,2,2]),\
-                            mu_hidden_states_one_episode[:,2] + np.sqrt(var_hidden_states_one_episode[:,2,2]), color='gray', alpha=0.2)
-        ax1.set_ylabel('LA')
+        ax1.plot(timesteps, mu_hidden_states_one_episode[:,3], label='ITV')
+        ax1.fill_between(timesteps, mu_hidden_states_one_episode[:,3] - np.sqrt(var_hidden_states_one_episode[:,3,3]),\
+                            mu_hidden_states_one_episode[:,3] + np.sqrt(var_hidden_states_one_episode[:,3,3]), color='gray', alpha=0.2)
+        ax1.set_ylabel('ITV')
 
         ax2.fill_between(timesteps, np.zeros_like(timesteps)-3*AR_std_stationary, np.zeros_like(timesteps)+3*AR_std_stationary, color='red', alpha=0.1)
         ax2.plot(timesteps, mu_hidden_states_one_episode[:,-2], label='AR')

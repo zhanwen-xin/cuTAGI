@@ -122,7 +122,8 @@ class LSTM_KF_Env(gym.Env):
         self.current_step = self.step_look_back # Current time step is the python index
         hidden_states_temp = self._hidden_states_collector(self.current_step, self.hidden_state_one_episode)
 
-        self._agent_vision = hidden_states_temp['mu'][:, 3]
+        # self._agent_vision = hidden_states_temp['mu'][:, 3]
+        self._agent_vision = np.hstack((hidden_states_temp['mu'][:, 3], hidden_states_temp['mu'][:, -2]))
         self._measurement = self.obs_unnorm[-1]
 
         observation = self._get_obs()
@@ -191,32 +192,44 @@ class LSTM_KF_Env(gym.Env):
 
         hidden_states_temp = self._hidden_states_collector(self.current_step, self.hidden_state_one_episode)
 
-        self._agent_vision = hidden_states_temp['mu'][:, 3]
+        # self._agent_vision = hidden_states_temp['mu'][:, 3]
+        self._agent_vision = np.hstack((hidden_states_temp['mu'][:, 3], hidden_states_temp['mu'][:, -2]))
         self._measurement = self.obs_unnorm[-1]
 
         observation = self._get_obs()
         info = self._get_info()
 
+        # # Reward
+        # # Exclude AR component from z_pred, Sz_pred
+        # z_pred_excl_AR = np.delete(z_pred, -2)
+        # Sz_pred_excl_AR = np.delete(Sz_pred, -2, axis=0)
+        # Sz_pred_excl_AR = np.delete(Sz_pred_excl_AR, -2, axis=1)
+        # F_exlude_AR = np.delete(self.ts_model.F, -2)
+
+        # y_pred_excl_AR = F_exlude_AR @ z_pred_excl_AR
+        # Sy_pred_excl_AR = F_exlude_AR @ Sz_pred_excl_AR @ F_exlude_AR.T
+
+        # if np.isnan(y):
+        #     likelihood = norm.pdf(y_pred_excl_AR, loc=y_pred_excl_AR, scale=np.sqrt(Sy_pred_excl_AR))
+        # else:
+        #     likelihood = norm.pdf(y, loc=y_pred_excl_AR, scale=np.sqrt(Sy_pred_excl_AR))
+
+        # reward = float(np.clip(np.log(likelihood),-1e3, np.inf))
+
         # Reward
-        # Exclude -2 component from z_pred, Sz_pred
-        z_pred_excl_AR = np.delete(z_pred, -2)
-        Sz_pred_excl_AR = np.delete(Sz_pred, -2, axis=0)
-        Sz_pred_excl_AR = np.delete(Sz_pred_excl_AR, -2, axis=1)
-        F_exlude_AR = np.delete(self.ts_model.F, -2)
-
-        y_pred_excl_AR = F_exlude_AR @ z_pred_excl_AR
-        Sy_pred_excl_AR = F_exlude_AR @ Sz_pred_excl_AR @ F_exlude_AR.T
-
-        # y_pred_excl_itv = y_pred - z_update[3]
-        # Sy_pred_excl_itv = Sy_pred + Sz_update[3, 3] + 2 * Sz_update[3, -2]
+        # Exclude intervention component from z_pred, Sz_pred
+        y_pred_excl_itv = y_pred - z_update[3]
+        Sy_pred_excl_itv = Sy_pred + Sz_update[3, 3] + 2 * Sz_update[3, -2]
 
         if np.isnan(y):
-            likelihood = norm.pdf(y_pred_excl_AR, loc=y_pred_excl_AR, scale=np.sqrt(Sy_pred_excl_AR))
+            likelihood = norm.pdf(y_pred_excl_itv, loc=y_pred_excl_itv, scale=np.sqrt(Sy_pred_excl_itv))
         else:
-            likelihood = norm.pdf(y, loc=y_pred_excl_AR, scale=np.sqrt(Sy_pred_excl_AR))
+            likelihood = norm.pdf(y, loc=y_pred_excl_itv, scale=np.sqrt(Sy_pred_excl_itv))
 
         reward = float(np.clip(np.log(likelihood),-1e3, np.inf))
 
+        # # Reward
+        # # LL + stationary AR
         # AR_var_stationary = self.ts_model.Sigma_AR / (1 - self.ts_model.phi_AR**2)
         # clip_value_ar = np.log(self._evaluate_standard_gaussian_probability(x = 1*np.sqrt(Sz_update[-2, -2]+AR_var_stationary), \
         #                                                                     mu = 0, std=np.sqrt(Sz_update[-2, -2]+AR_var_stationary)))
