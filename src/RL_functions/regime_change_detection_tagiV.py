@@ -30,7 +30,7 @@ class TAGI_Net():
         super(TAGI_Net, self).__init__()
         self.net = Sequential(
                     # Linear(n_observations, 32),
-                    Linear(n_observations, 32, gain_weight=0.5, gain_bias=0.5),
+                    Linear(n_observations+1, 32, gain_weight=0.5, gain_bias=0.5),
                     ReLU(),
                     # Linear(32, 32),
                     Linear(32, 32, gain_weight=0.5, gain_bias=0.5),
@@ -309,9 +309,13 @@ class regime_change_detection_tagiV():
             # Compute the stationary standard deviation for AR
             AR_std_stationary = np.sqrt(self.trained_BDLM.Sigma_AR/(1 - self.trained_BDLM.phi_AR**2))
             LA_var_stationary = self.trained_BDLM.Sigma_AA_ratio *  self.trained_BDLM.Sigma_AR/(1 - self.trained_BDLM.phi_AA**2)
-            if step_look_back == 64:
-                seg_len = 8
+            # if step_look_back == 64:
+            seg_len = 8
             state = normalize_tensor_two_parts(state, 0, 1, 0, AR_std_stationary, seg_len)
+            # Add a 0 to the state to represent if intervention is taken
+            state = torch.cat((state, torch.zeros(1, 1, device=self.device)), dim=1)
+            action_triggered_last_64_steps = False
+            dummy_steps = 0
 
             total_reward_one_episode = 0
             dummy_steps = 0
@@ -349,6 +353,19 @@ class regime_change_detection_tagiV():
                             dtype=torch.float32, device=self.device).unsqueeze(0)
                     next_state = normalize_tensor_two_parts(next_state, 0, 1, 0, AR_std_stationary, seg_len)
 
+                    if action.item() == 1:
+                        action_triggered_last_64_steps = True
+                        dummy_steps = 0
+                    if action_triggered_last_64_steps:
+                        if dummy_steps > 64:
+                            action_triggered_last_64_steps = False
+                            next_state = torch.cat((next_state, torch.zeros(1, 1, device=self.device)), dim=1)
+                        else:
+                            next_state = torch.cat((next_state, torch.ones(1, 1, device=self.device)), dim=1)
+                            dummy_steps += 1
+                    else:
+                        next_state = torch.cat((next_state, torch.zeros(1, 1, device=self.device)), dim=1)
+
                 # Store the transition in memory
                 self.memory.push(state, action, next_state, reward)
 
@@ -380,6 +397,8 @@ class regime_change_detection_tagiV():
             Q_var_all = np.array(Q_var_all).T
             Q_var_epstic_all = [[np.nan, np.nan]] * 65 + Q_var_epstic_all
             Q_var_epstic_all = np.array(Q_var_epstic_all).T
+
+            p_a1 = scipy.stats.norm.cdf((Q_values_all[1]-Q_values_all[0])/np.sqrt(Q_var_all[0] + Q_var_all[1]))
 
             print(track_intervention_taken_times)
             print(self.episode_f1t)
@@ -418,11 +437,16 @@ class regime_change_detection_tagiV():
                         ax0.axvline(x=anomaly_pos2, color='gray', linestyle='--')
                     ax0.legend()
 
-                    ax2.plot(timesteps, mu_hidden_states_one_episode[:,1], label='LT')
-                    ax2.fill_between(timesteps, mu_hidden_states_one_episode[:,1] - np.sqrt(var_hidden_states_one_episode[:,1,1]),\
-                                        mu_hidden_states_one_episode[:,1] + np.sqrt(var_hidden_states_one_episode[:,1,1]), color='gray', alpha=0.2)
-                    ax2.set_ylabel('LT')
-
+                    # ax2.plot(timesteps, mu_hidden_states_one_episode[:,1], label='LT')
+                    # ax2.fill_between(timesteps, mu_hidden_states_one_episode[:,1] - np.sqrt(var_hidden_states_one_episode[:,1,1]),\
+                    #                     mu_hidden_states_one_episode[:,1] + np.sqrt(var_hidden_states_one_episode[:,1,1]), color='gray', alpha=0.2)
+                    # ax2.set_ylabel('LT')
+                    
+                    ax2.plot(timesteps, p_a1, label='P(a1-a0)')
+                    ax2.set_ylabel('P(a1-a0)')
+                    ax2.set_ylim(-0.1, 1.1)
+                    ax2.set_xlim(ax0.get_xlim())
+                    
                     ax3.fill_between(timesteps, np.zeros_like(timesteps)-2*AR_std_stationary, np.zeros_like(timesteps)+2*AR_std_stationary, color='red', alpha=0.1)
                     ax3.plot(timesteps, mu_hidden_states_one_episode[:,-2], label='AR')
                     ax3.fill_between(timesteps, mu_hidden_states_one_episode[:,-2] - np.sqrt(var_hidden_states_one_episode[:,-2,-2]),\
@@ -510,6 +534,7 @@ class regime_change_detection_tagiV():
                             state = torch.tensor(state['hidden_states'],\
                                 dtype=torch.float32, device='cpu').unsqueeze(0)
                             state = normalize_tensor_two_parts(state, 0, 1, 0, AR_std_stationary, seg_len)
+                            state = torch.cat((state, torch.zeros(1, 1, device='cpu')), dim=1)
 
                             action = self._select_action(state, greedy=True)
                             state, _, terminated, truncated, info = env.step(action.item(), cost_intervention=self.cost_intervention)
@@ -601,16 +626,27 @@ class regime_change_detection_tagiV():
         intervention_index =[]
         LA_var_stationary = self.trained_BDLM.Sigma_AA_ratio *  self.trained_BDLM.Sigma_AR/(1 - self.trained_BDLM.phi_AA**2)
         AR_std_stationary = np.sqrt(self.trained_BDLM.Sigma_AR/(1 - self.trained_BDLM.phi_AR**2))
-        if step_look_back == 64:
-            seg_len = 8
+        # if step_look_back == 64:
+        seg_len = 8
         RL_step_taken = 0
         Q_values_all = []
         Q_var_all = []
         Q_var_epstic_all = []
+        action_triggered_last_64_steps = False
+        dummy_steps = 0
         for t in count():
             state = torch.tensor(state['hidden_states'],\
                                 dtype=torch.float32, device='cpu').unsqueeze(0)
             state = normalize_tensor_two_parts(state, 0, 1, 0, AR_std_stationary, seg_len)
+            if action_triggered_last_64_steps:
+                if dummy_steps > 64:
+                    action_triggered_last_64_steps = False
+                    state = torch.cat((state, torch.zeros(1, 1, device='cpu')), dim=1)
+                else:
+                    state = torch.cat((state, torch.ones(1, 1, device='cpu')), dim=1)
+                    dummy_steps += 1
+            else:
+                state = torch.cat((state, torch.zeros(1, 1, device='cpu')), dim=1)
 
             # Select action
             action = self._select_action(state, greedy=True)
@@ -629,6 +665,7 @@ class regime_change_detection_tagiV():
 
             if action.item() == 1:
                 intervention_index.append(t + step_look_back + 1)
+                action_triggered_last_64_steps = True
 
             done = terminated or truncated
             if done:
@@ -641,6 +678,9 @@ class regime_change_detection_tagiV():
         Q_var_all = np.array(Q_var_all).T
         Q_var_epstic_all = [[np.nan, np.nan]] * 65 + Q_var_epstic_all
         Q_var_epstic_all = np.array(Q_var_epstic_all).T
+
+        # Compute P(a1-a0)
+        p_a1 = scipy.stats.norm.cdf((Q_values_all[1]-Q_values_all[0])/np.sqrt(Q_var_all[0] + Q_var_all[1]))
 
         # Plot prediction
         timesteps = np.arange(0, len(info['measurement_one_episode']), 1)
@@ -685,11 +725,15 @@ class regime_change_detection_tagiV():
         ax2.set_ylabel('AR')
         # ax2.set_ylim(-1.1, 1.1)
 
-        ax3.plot(timesteps, mu_hidden_states_one_episode[:,1], label='LT')
-        ax3.fill_between(timesteps, mu_hidden_states_one_episode[:,1] - np.sqrt(var_hidden_states_one_episode[:,1,1]),\
-                            mu_hidden_states_one_episode[:,1] + np.sqrt(var_hidden_states_one_episode[:,1,1]), color='gray', alpha=0.2)
-        ax3.set_ylabel('LT')
-        ax3.set_ylim(-0.1,0.1)
+        # ax3.plot(timesteps, mu_hidden_states_one_episode[:,1], label='LT')
+        # ax3.fill_between(timesteps, mu_hidden_states_one_episode[:,1] - np.sqrt(var_hidden_states_one_episode[:,1,1]),\
+        #                     mu_hidden_states_one_episode[:,1] + np.sqrt(var_hidden_states_one_episode[:,1,1]), color='gray', alpha=0.2)
+        # ax3.set_ylabel('LT')
+        # ax3.set_ylim(-0.1,0.1)
+        ax3.plot(timesteps, p_a1, label='P(a1-a0)')
+        ax3.set_ylabel('P(a1-a0)')
+        ax3.set_ylim(-0.1, 1.1)
+        ax3.set_xlim(ax0.get_xlim())
 
         ax4.plot(timesteps, mu_hidden_states_one_episode[:,-1], label='LSTM')
         ax4.fill_between(timesteps, mu_hidden_states_one_episode[:,-1] - np.sqrt(var_hidden_states_one_episode[:,-1,-1]),\
@@ -854,7 +898,7 @@ class regime_change_detection_tagiV():
         action_batch = torch.cat(batch.action).numpy()
         reward_batch = torch.cat(batch.reward).numpy()
         next_state_mean_batch = torch.cat([s if s is not None
-                                           else torch.tensor([np.ones(self.policy_net.n_observations, dtype=np.float32)])
+                                           else torch.tensor([np.ones(self.policy_net.n_observations + 1, dtype=np.float32)])
                                            for s in batch.next_state]).numpy()
 
         # Add uncertainty to the state

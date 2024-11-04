@@ -470,7 +470,6 @@ class SyntheticTimeSeriesDataloader:
             return data.values
         else:
             # if select_column is given by the user, return the selected column
-            print(data.values.shape)
             return data.values[:, select_column].reshape(-1, 1)
 
     @staticmethod
