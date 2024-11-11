@@ -47,18 +47,45 @@ class TAGI_Net():
 class ReplayMemory(object):
 
     def __init__(self, capacity):
+        self.memory_action0 = deque([], maxlen=capacity)
+        self.memory_action1 = deque([], maxlen=capacity)
         self.memory = deque([], maxlen=capacity)
 
     def push(self, *args):
         """Save a transition"""
+        if Transition(*args).action == 0:
+            self.memory_action0.append(Transition(*args))
+        if Transition(*args).action == 1:
+            self.memory_action1.append(Transition(*args))
         self.memory.append(Transition(*args))
 
     def sample(self, batch_size):
-        output = random.sample(self.memory, batch_size)
+        batch_size_action0 = int(batch_size * 0.9)
+        batch_size_action1 = batch_size - batch_size_action0
+        if batch_size_action0 < len(self.memory_action0) and batch_size_action1 < len(self.memory_action1):
+            output = random.sample(self.memory_action0, batch_size_action0) + random.sample(self.memory_action1, batch_size_action1)
+        else:
+            output = random.sample(self.memory, batch_size)
         return output
 
     def __len__(self):
         return len(self.memory)
+    
+# class ReplayMemory(object):
+
+#     def __init__(self, capacity):
+#         self.memory = deque([], maxlen=capacity)
+
+#     def push(self, *args):
+#         """Save a transition"""
+#         self.memory.append(Transition(*args))
+
+#     def sample(self, batch_size):
+#         output = random.sample(self.memory, batch_size)
+#         return output
+
+#     def __len__(self):
+#         return len(self.memory)
 
 class regime_change_detection_tagiV():
     def __init__(self, **kwargs):   
@@ -226,7 +253,7 @@ class regime_change_detection_tagiV():
         optim_episode = early_stop_start
         # Set seed for numpy random
         np.random.seed(0)
-        random.seed(0)      # Random seed for sampling batches
+        random.seed(10)      # Random seed for sampling batches
         validation_rand_samples = [np.random.random() for _ in range(validation_episode_num)]
         anm_mag_ratio = 0.94
         anm_mag_ratio_pow = 1
@@ -1019,6 +1046,10 @@ class regime_change_detection_tagiV():
         if greedy:
             action_var = Sa[::2] + ma[1::2]
             action = np.argmax(np.array(action_mean) - np.sqrt(action_var), axis=0)
+            # if action_mean[0] < action_mean[1] - np.sqrt(action_var[1]):
+            #     action = 1
+            # else:
+            #     action = 0
         else:
             action_var = Sa[::2]
 

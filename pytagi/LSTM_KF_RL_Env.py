@@ -216,34 +216,49 @@ class LSTM_KF_Env(gym.Env):
 
         # reward = float(np.clip(np.log(likelihood),-1e3, np.inf))
 
-        # Reward
-        # Exclude intervention component from z_pred, Sz_pred
-        y_pred_excl_itv = y_pred - z_update[3]
-        Sy_pred_excl_itv = Sy_pred + Sz_update[3, 3] + 2 * Sz_update[3, -2]
-
-        if np.isnan(y):
-            likelihood = norm.pdf(y_pred_excl_itv, loc=y_pred_excl_itv, scale=np.sqrt(Sy_pred_excl_itv))
-        else:
-            likelihood = norm.pdf(y, loc=y_pred_excl_itv, scale=np.sqrt(Sy_pred_excl_itv))
-
-        reward = float(np.clip(np.log(likelihood),-1e3, np.inf))
-
         # # Reward
-        # # LL + stationary AR
-        # AR_var_stationary = self.ts_model.Sigma_AR / (1 - self.ts_model.phi_AR**2)
-        # clip_value_ar = np.log(self._evaluate_standard_gaussian_probability(x = 1*np.sqrt(Sz_update[-2, -2]+AR_var_stationary), \
-        #                                                                     mu = 0, std=np.sqrt(Sz_update[-2, -2]+AR_var_stationary)))
+        # # Exclude intervention component from z_pred, Sz_pred
+        # y_pred_excl_itv = y_pred - z_update[3]
+        # Sy_pred_excl_itv = Sy_pred + Sz_update[3, 3] + 2 * Sz_update[3, -2]
+
         # if np.isnan(y):
-        #     likelihood = norm.pdf(y_pred, loc=y_pred, scale=np.sqrt(Sy_pred))
+        #     likelihood = norm.pdf(y_pred_excl_itv, loc=y_pred_excl_itv, scale=np.sqrt(Sy_pred_excl_itv))
         # else:
-        #     likelihood = norm.pdf(y, loc=y_pred, scale=np.sqrt(Sy_pred))
-        # reward = float(
-        #         # likelihood
-        #         # np.log(likelihood)
-        #         np.clip(np.log(likelihood),-1e3, np.inf)
-        #         + np.clip(np.log(self._evaluate_standard_gaussian_probability(z_update[-2], 0, np.sqrt(Sz_update[-2, -2]+AR_var_stationary))),\
-        #                     -1e3, clip_value_ar) - clip_value_ar\
-        #         )
+        #     likelihood = norm.pdf(y, loc=y_pred_excl_itv, scale=np.sqrt(Sy_pred_excl_itv))
+
+        # reward = float(np.clip(np.log(likelihood),-1e3, np.inf))
+
+        # Reward
+        # LL + stationary AR
+        AR_var_stationary = self.ts_model.Sigma_AR / (1 - self.ts_model.phi_AR**2)
+        clip_value_ar = np.log(self._evaluate_standard_gaussian_probability(x = 1*np.sqrt(Sz_update[-2, -2]+AR_var_stationary), \
+                                                                            mu = 0, std=np.sqrt(Sz_update[-2, -2]+AR_var_stationary)))
+        
+        if np.isnan(y):
+            likelihood = norm.pdf(y_pred, loc=y_pred, scale=np.sqrt(Sy_pred))
+            # likelihood_reward = 1 if likelihood > 0.05 else 0
+
+        else:
+            # Conditional likelihood
+            samples_y_plus_ARW = np.random.normal(0, np.sqrt(self.ts_model.Sigma_AR), 100) + y_pred
+            Sy_pred_exclude_ARW = Sy_pred - self.ts_model.Sigma_AR
+            likelihood_samples = norm.pdf(y, loc=samples_y_plus_ARW, scale=np.sqrt(Sy_pred_exclude_ARW))
+            likelihood = np.mean(likelihood_samples)
+            
+            # # Reward samples, which is 1 if y lies in the 95% confidence interval
+            # reward_samples = np.where(likelihood_samples > 0.05, 1, 0)
+            # likelihood_reward = np.mean(reward_samples)
+            # # Likelihood
+            # likelihood = norm.pdf(y, loc=y_pred, scale=np.sqrt(Sy_pred))
+        
+        reward = float(
+                # likelihood
+                # np.log(likelihood)
+                # np.clip(np.log(likelihood),-1e3, np.inf)
+                likelihood
+                + np.clip(np.log(self._evaluate_standard_gaussian_probability(z_update[-2], 0, np.sqrt(Sz_update[-2, -2]+AR_var_stationary))),\
+                            -1e3, clip_value_ar) - clip_value_ar\
+                )
 
         if action == 1:
             reward -= cost_intervention
