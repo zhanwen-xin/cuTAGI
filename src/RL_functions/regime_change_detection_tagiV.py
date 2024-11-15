@@ -252,8 +252,8 @@ class regime_change_detection_tagiV():
         track_intervention_taken_times = np.zeros(num_episodes-validation_episode_num)
         optim_episode = early_stop_start
         # Set seed for numpy random
-        np.random.seed(0)
-        random.seed(10)      # Random seed for sampling batches
+        # np.random.seed(10)
+        # random.seed(10)      # Random seed for sampling batches
         validation_rand_samples = [np.random.random() for _ in range(validation_episode_num)]
         anm_mag_ratio = 0.94
         anm_mag_ratio_pow = 1
@@ -510,8 +510,11 @@ class regime_change_detection_tagiV():
                     # plt.savefig(filename)
                     # plt.close()
 
-            if i_episode >= early_stop_start:
-                self._test_real_data(i_episode, init_z, init_Sz, init_mu_preds_lstm, init_var_preds_lstm)
+            # if i_episode >= early_stop_start:
+            #     self._test_real_data(i_episode, init_z, init_Sz, init_mu_preds_lstm, init_var_preds_lstm)
+
+            # Save models
+            self.policy_net.net.save_csv('saved_param/CASC_LGA007PIAP_E010_2024_07/agents100/agent_episode_'+str(i_episode+1))   
 
             # Early stopping
             if early_stopping:

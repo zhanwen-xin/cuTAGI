@@ -254,10 +254,10 @@ class LSTM_KF_Env(gym.Env):
         reward = float(
                 # likelihood
                 # np.log(likelihood)
-                # np.clip(np.log(likelihood),-1e3, np.inf)
-                likelihood
-                + np.clip(np.log(self._evaluate_standard_gaussian_probability(z_update[-2], 0, np.sqrt(Sz_update[-2, -2]+AR_var_stationary))),\
-                            -1e3, clip_value_ar) - clip_value_ar\
+                np.clip(np.log(likelihood),-1e2, np.inf)
+                # likelihood
+                # + np.clip(np.log(self._evaluate_standard_gaussian_probability(z_update[-2], 0, np.sqrt(Sz_update[-2, -2]+AR_var_stationary))),\
+                #             -1e3, clip_value_ar) - clip_value_ar\
                 )
 
         if action == 1:
