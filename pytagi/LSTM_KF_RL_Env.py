@@ -199,20 +199,20 @@ class LSTM_KF_Env(gym.Env):
         observation = self._get_obs()
         info = self._get_info()
 
-        # # Reward
-        # # Exclude AR component from z_pred, Sz_pred
-        # z_pred_excl_AR = np.delete(z_pred, -2)
-        # Sz_pred_excl_AR = np.delete(Sz_pred, -2, axis=0)
-        # Sz_pred_excl_AR = np.delete(Sz_pred_excl_AR, -2, axis=1)
-        # F_exlude_AR = np.delete(self.ts_model.F, -2)
+        # Reward
+        # Exclude AR component from z_pred, Sz_pred
+        z_pred_excl_AR = np.delete(z_pred, -2)
+        Sz_pred_excl_AR = np.delete(Sz_pred, -2, axis=0)
+        Sz_pred_excl_AR = np.delete(Sz_pred_excl_AR, -2, axis=1)
+        F_exlude_AR = np.delete(self.ts_model.F, -2)
 
-        # y_pred_excl_AR = F_exlude_AR @ z_pred_excl_AR
-        # Sy_pred_excl_AR = F_exlude_AR @ Sz_pred_excl_AR @ F_exlude_AR.T
+        y_pred_excl_AR = F_exlude_AR @ z_pred_excl_AR
+        Sy_pred_excl_AR = F_exlude_AR @ Sz_pred_excl_AR @ F_exlude_AR.T
 
-        # if np.isnan(y):
-        #     likelihood = norm.pdf(y_pred_excl_AR, loc=y_pred_excl_AR, scale=np.sqrt(Sy_pred_excl_AR))
-        # else:
-        #     likelihood = norm.pdf(y, loc=y_pred_excl_AR, scale=np.sqrt(Sy_pred_excl_AR))
+        if np.isnan(y):
+            likelihood = norm.pdf(y_pred_excl_AR, loc=y_pred_excl_AR, scale=np.sqrt(Sy_pred_excl_AR))
+        else:
+            likelihood = norm.pdf(y, loc=y_pred_excl_AR, scale=np.sqrt(Sy_pred_excl_AR))
 
         # reward = float(np.clip(np.log(likelihood),-1e3, np.inf))
 
@@ -228,28 +228,28 @@ class LSTM_KF_Env(gym.Env):
 
         # reward = float(np.clip(np.log(likelihood),-1e3, np.inf))
 
-        # Reward
-        # LL + stationary AR
-        AR_var_stationary = self.ts_model.Sigma_AR / (1 - self.ts_model.phi_AR**2)
-        clip_value_ar = np.log(self._evaluate_standard_gaussian_probability(x = 1*np.sqrt(Sz_update[-2, -2]+AR_var_stationary), \
-                                                                            mu = 0, std=np.sqrt(Sz_update[-2, -2]+AR_var_stationary)))
+        # # Reward
+        # # LL + stationary AR
+        # AR_var_stationary = self.ts_model.Sigma_AR / (1 - self.ts_model.phi_AR**2)
+        # clip_value_ar = np.log(self._evaluate_standard_gaussian_probability(x = 1*np.sqrt(Sz_update[-2, -2]+AR_var_stationary), \
+        #                                                                     mu = 0, std=np.sqrt(Sz_update[-2, -2]+AR_var_stationary)))
         
-        if np.isnan(y):
-            likelihood = norm.pdf(y_pred, loc=y_pred, scale=np.sqrt(Sy_pred))
-            # likelihood_reward = 1 if likelihood > 0.05 else 0
+        # if np.isnan(y):
+        #     likelihood = norm.pdf(y_pred, loc=y_pred, scale=np.sqrt(Sy_pred))
+        #     # likelihood_reward = 1 if likelihood > 0.05 else 0
 
-        else:
-            # Conditional likelihood
-            samples_y_plus_ARW = np.random.normal(0, np.sqrt(self.ts_model.Sigma_AR), 100) + y_pred
-            Sy_pred_exclude_ARW = Sy_pred - self.ts_model.Sigma_AR
-            likelihood_samples = norm.pdf(y, loc=samples_y_plus_ARW, scale=np.sqrt(Sy_pred_exclude_ARW))
-            likelihood = np.mean(likelihood_samples)
+        # else:
+        #     # Conditional likelihood
+        #     samples_y_plus_ARW = np.random.normal(0, np.sqrt(self.ts_model.Sigma_AR), 100) + y_pred
+        #     Sy_pred_exclude_ARW = Sy_pred - self.ts_model.Sigma_AR
+        #     likelihood_samples = norm.pdf(y, loc=samples_y_plus_ARW, scale=np.sqrt(Sy_pred_exclude_ARW))
+        #     likelihood = np.mean(likelihood_samples)
             
-            # # Reward samples, which is 1 if y lies in the 95% confidence interval
-            # reward_samples = np.where(likelihood_samples > 0.05, 1, 0)
-            # likelihood_reward = np.mean(reward_samples)
-            # # Likelihood
-            # likelihood = norm.pdf(y, loc=y_pred, scale=np.sqrt(Sy_pred))
+        #     # # Reward samples, which is 1 if y lies in the 95% confidence interval
+        #     # reward_samples = np.where(likelihood_samples > 0.05, 1, 0)
+        #     # likelihood_reward = np.mean(reward_samples)
+        #     # # Likelihood
+        #     # likelihood = norm.pdf(y, loc=y_pred, scale=np.sqrt(Sy_pred))
         
         reward = float(
                 # likelihood
