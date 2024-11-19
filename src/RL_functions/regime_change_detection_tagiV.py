@@ -145,7 +145,7 @@ class regime_change_detection_tagiV():
             #         )
             hybrid_gen = LSTM_SSM(
                         neural_network = self.LSTM_test_net,           # LSTM
-                        baseline = 'AA + AR_fixed',
+                        baseline = 'LT + BAR + ITV + AR_fixed',
                         z_init  = self.init_z,
                         Sz_init = self.init_Sz,
                         use_auto_AR = False,
