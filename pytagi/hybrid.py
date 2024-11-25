@@ -112,7 +112,14 @@ class LSTM_SSM:
                 cov_AR_others = np.delete(cov_AR_others, BAR_pos) # Remove the covariance with BAR
                 # cov_AR_others = np.delete(cov_AR_others, BAR_pos) # Remove the covariance with ITV
                 cov_AR_others = np.delete(cov_AR_others, -1)      # Remove the covariance with LSTM
-                muBAR_t_t_, covBAR_t_t_, cov_X_XBAR_t_t=BAR(z_prior[AR_pos],cov_AR_others,gamma_val, z_prior[-3], self.mu_W2b_prior)
+
+                # Sometimes z_prior[-3] can be greater than 1, which is not possible for phi_AR
+                if z_prior[-3]>1:
+                    phi_AR = 0.99
+                else:
+                    phi_AR = z_prior[-3]
+
+                muBAR_t_t_, covBAR_t_t_, cov_X_XBAR_t_t=BAR(z_prior[AR_pos],cov_AR_others,gamma_val, phi_AR, self.mu_W2b_prior)
                 covBAR_t_t_ = covBAR_t_t_.item()
                 cov_X_XBAR_t_t = np.append(cov_X_XBAR_t_t, 0)
                 cov_X_XBAR_t_t = np.insert(cov_X_XBAR_t_t, BAR_pos, covBAR_t_t_)

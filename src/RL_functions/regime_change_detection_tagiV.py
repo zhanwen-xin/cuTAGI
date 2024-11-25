@@ -17,6 +17,7 @@ import matplotlib
 from matplotlib import gridspec
 from collections import namedtuple, deque
 import math
+from pytagi.nn import LSTM, Linear, OutputUpdater, Sequential
 
 from pytagi.nn import Linear, OutputUpdater, ReLU, Sequential, EvenExp
 
@@ -129,7 +130,17 @@ class regime_change_detection_tagiV():
         self.episode_f1t = []
         self.GAMMA = 0.99
 
-    def generate_synthetic_ts(self, num_syn_ts, syn_ts_len, plot = True):
+    def load_LSTM_model(self, path):
+        self.model_path = path
+        self.net_gen = Sequential(
+            LSTM(self.num_features, 30, self.input_seq_len),
+            LSTM(30, 30, self.input_seq_len),
+            Linear(30 * self.input_seq_len, 1),
+        )
+        self.net_gen.set_threads(8)
+        self.net_gen.load(filename = self.model_path)
+
+    def generate_synthetic_ts(self, num_syn_ts, syn_ts_len, paths_all = [], plot = True):
         self.syn_ts_all = []
         for j in tqdm(range(num_syn_ts)):
             # hybrid_gen = LSTM_SSM(
@@ -143,12 +154,22 @@ class regime_change_detection_tagiV():
             #             Sigma_AA_ratio = self.Sigma_AA_ratio,
             #             phi_AA = self.phi_AA,
             #         )
+            
+            # Determine if paths_all is empty
+            if len(paths_all) == 0:
+                self.net_gen = self.LSTM_test_net
+            else:
+                index = np.random.randint(0, len(paths_all))
+                self.load_LSTM_model(paths_all[index])
+
             hybrid_gen = LSTM_SSM(
-                        neural_network = self.LSTM_test_net,           # LSTM
+                        neural_network = self.net_gen,           # LSTM
                         baseline = 'LT + BAR + ITV + AR_fixed',
                         z_init  = self.init_z,
                         Sz_init = self.init_Sz,
                         use_auto_AR = False,
+                        use_BAR=self.trained_BDLM.use_BAR,
+                        input_BAR=self.trained_BDLM.input_BAR,
                         phi_AR = self.phi_AR,
                         Sigma_AR = self.Sigma_AR,
                         Sigma_AA_ratio = self.Sigma_AA_ratio,
@@ -514,7 +535,7 @@ class regime_change_detection_tagiV():
             #     self._test_real_data(i_episode, init_z, init_Sz, init_mu_preds_lstm, init_var_preds_lstm)
 
             # Save models
-            self.policy_net.net.save_csv('saved_param/CASC_LGA007PIAP_E010_2024_07/agents100/agent_episode_'+str(i_episode+1))   
+            self.policy_net.net.save_csv('saved_param/CASC_LGA007EFAPRG910_2024_07/agents100/agent_episode_'+str(i_episode+1))   
 
             # Early stopping
             if early_stopping:
