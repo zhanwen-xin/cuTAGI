@@ -372,6 +372,9 @@ class regime_change_detection_tagiV():
             Q_var_epstic_all = []
             for t in count():
                 action = self._select_action(state)
+                if i_episode < 5:
+                    # 5% of the time, take action 1
+                    action = action * 0 + np.random.choice([0, 1], p=[0.95, 0.05])          
 
                 observation, reward, terminated, truncated, info = env.step(action.item(), cost_intervention=self.cost_intervention)
 
