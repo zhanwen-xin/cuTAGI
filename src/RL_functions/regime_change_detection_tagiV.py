@@ -535,7 +535,7 @@ class regime_change_detection_tagiV():
             #     self._test_real_data(i_episode, init_z, init_Sz, init_mu_preds_lstm, init_var_preds_lstm)
 
             # Save models
-            self.policy_net.net.save_csv('saved_param/CASC_LGA007EFAPRG910_2024_07/agents100/agent_episode_'+str(i_episode+1))   
+            self.policy_net.net.save_csv('saved_param/synthetic/agents100/agent_episode_'+str(i_episode+1))   
 
             # Early stopping
             if early_stopping:

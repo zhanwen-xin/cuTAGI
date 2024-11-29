@@ -110,7 +110,7 @@ def BAR(muAR_t_t:np.ndarray, covX_t_t:np.ndarray, gamma_val:np.ndarray, phi_AR, 
         cov_XAR_XBAR_t_t (np.ndarray): covariance between XAR and XBAR, [1,]
     """
     covAR_t_t = covX_t_t[-1]
-    b_val=gamma_val*np.sqrt(Q_AR/(1-phi_AR**2))
+    b_val = gamma_val*np.sqrt(Q_AR/(1-phi_AR**2))
 
     l_bar = muAR_t_t + b_val
     mu_L = l_bar * scipy.stats.norm.cdf(l_bar/np.sqrt(covAR_t_t)) + np.sqrt(covAR_t_t) * scipy.stats.norm.pdf(l_bar/np.sqrt(covAR_t_t)) - b_val
@@ -124,6 +124,7 @@ def BAR(muAR_t_t:np.ndarray, covX_t_t:np.ndarray, gamma_val:np.ndarray, phi_AR, 
 
     muBAR_t_t_ = mu_L + mu_U - muAR_t_t
     covBAR_t_t_ = var_L + (mu_L - muAR_t_t)**2 + var_U + (mu_U - muAR_t_t)**2 - (muBAR_t_t_ - muAR_t_t)**2 - covAR_t_t
+    covBAR_t_t_ = np.maximum(covBAR_t_t_, 1e-8) # For numerical stability
     cov_X_XBAR_t_t = covX_t_t * (scipy.stats.norm.cdf(l_bar/np.sqrt(covAR_t_t)) + scipy.stats.norm.cdf(u_bar/np.sqrt(covAR_t_t)) - 1)
 
     return muBAR_t_t_, covBAR_t_t_, cov_X_XBAR_t_t

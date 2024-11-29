@@ -161,10 +161,15 @@ class LSTM_SSM:
                 z_prior[BAR_pos] = muBAR_t_t_
                 Sz_prior[BAR_pos, :] = cov_X_XBAR_t_t
                 Sz_prior[:, BAR_pos] = cov_X_XBAR_t_t
+                # z_prior[BAR_pos] = 0
+                # Sz_prior[BAR_pos, :] = 0
+                # Sz_prior[:, BAR_pos] = 0
 
                 # Compute AR-BAR, and put it in the ITV position, BAR_pos + 1
                 z_prior[BAR_pos+1] = z_prior[AR_pos] - z_prior[BAR_pos]
                 Sz_prior[BAR_pos+1, BAR_pos+1] = Sz_prior[AR_pos, AR_pos] + Sz_prior[BAR_pos, BAR_pos] - 2 * Sz_prior[AR_pos, BAR_pos]
+                # z_prior[BAR_pos+1] = 0
+                # Sz_prior[BAR_pos+1, BAR_pos+1] = 0
 
         # Predicted mean and var
         m_pred = self.F @ z_prior
@@ -214,6 +219,62 @@ class LSTM_SSM:
                 # detla for mean and var to update LSTM (parameters in net)
                 delta_mean_lstm = delta_mean[-1,-1]/var_lstm
                 delta_var_lstm  = delta_var[-1,-1]/var_lstm**2
+
+                # # Remove the BAR_pos and BAR_pos + 1 from the 1 * 6 matrix F
+                # BAR_pos = self.input_BAR[2]
+                # F_short = np.delete(self.F, BAR_pos, axis=1)
+                # F_short = np.delete(F_short, BAR_pos, axis=1)
+                # Sz_prior_short = np.delete(Sz_prior, BAR_pos, axis=0)
+                # Sz_prior_short = np.delete(Sz_prior_short, BAR_pos, axis=1)
+                # Sz_prior_short = np.delete(Sz_prior_short, BAR_pos, axis=0)
+                # Sz_prior_short = np.delete(Sz_prior_short, BAR_pos, axis=1)
+                # z_prior_short = np.delete(z_prior, BAR_pos, axis=0)
+                # z_prior_short = np.delete(z_prior_short, BAR_pos, axis=0)
+
+                # # Store the deleted values
+                # Sz_prior_deleted = Sz_prior[BAR_pos:BAR_pos+2, :]
+                # z_prior_deleted = z_prior[BAR_pos:BAR_pos+2]
+
+                # # cov_zy =  Sz_prior @ self.F.T
+                # cov_zy = Sz_prior_short @ F_short.T
+                # var_y = Sy_pred + var_obs
+                # # delta for mean z and var Sz
+                # cov_= cov_zy/var_y
+                # delta_mean =  cov_ * (mu_obs - y_pred)
+                # delta_var  = - cov_ @ cov_zy.T
+                # # update mean for mean z and var Sz
+                # # z_posterior = z_prior + delta_mean
+                # # Sz_posterior = Sz_prior + delta_var
+                # z_posterior = z_prior_short + delta_mean
+                # Sz_posterior = Sz_prior_short + delta_var
+                # # Determine if any element in the diagonal of Sz_posterior is negative
+                # if np.any(Sz_posterior.diagonal() < 0):
+                #     # z_posterior  = z_prior
+                #     # Sz_posterior = Sz_prior
+                #     # Print the index of the negative diagonal elements
+                #     print('negative variance somewhere')
+                #     print(cov_zy)
+                #     print(var_y)
+                #     print('?', self.Sz)
+                #     print('?', self.A @ self.Sz @ self.A.T)
+                #     print(Sz_prior_short)
+                #     print(F_short)
+                #     print(delta_var)
+                #     print(np.where(Sz_posterior.diagonal() < 0))
+                #     print('-------------------')
+
+                # # Add the deleted values
+                # z_posterior = np.insert(z_posterior, [BAR_pos,BAR_pos], 0, axis=0)
+                # Sz_posterior = np.insert(Sz_posterior, [BAR_pos,BAR_pos], 0, axis=0)
+                # Sz_posterior = np.insert(Sz_posterior, [BAR_pos,BAR_pos], 0, axis=1)
+                # z_posterior[BAR_pos:BAR_pos+2] = z_prior_deleted
+                # Sz_posterior[BAR_pos:BAR_pos+2, :] = Sz_prior_deleted
+                # Sz_posterior[:, BAR_pos:BAR_pos+2] = Sz_prior_deleted.T
+
+                # # detla for mean and var to update LSTM (parameters in net)
+                # delta_mean_lstm = delta_mean[-1,-1]/var_lstm
+                # delta_var_lstm  = delta_var[-1,-1]/var_lstm**2
+
                 # # update lstm network
                 if train_LSTM:
                     self.net.input_delta_z_buffer.delta_mu = np.array([delta_mean_lstm]).flatten()
@@ -449,6 +510,18 @@ class LSTM_SSM:
             self.F = np.array([1,0,0,0,0,1,1]).reshape(1, -1)
 
         elif self.baseline == 'LT + BAR + ITV + AR_fixed':
+            self.A = np.array([[1,1,0,0,0,0],[0,1,0,0,0,0],[0,0,0,0,0,0],[0,0,0,0,0,0],[0,0,0,0,self.phi_AR,0],[0,0,0,0,0,0]])
+            self.Q = np.zeros((6,6))
+            self.Q[-2,-2] = self.Sigma_AR
+            self.F = np.array([1,0,0,0,1,1]).reshape(1, -1)
+
+        # elif self.baseline == 'LT + AR_fixed':
+        #     self.A = np.array([[1,1,0,0],[0,1,0,0],[0,0,self.phi_AR,0],[0,0,0,0]])
+        #     self.Q = np.zeros((4,4))
+        #     self.Q[-2,-2] = self.Sigma_AR
+        #     self.F = np.array([1,0,1,1]).reshape(1, -1)
+
+        elif self.baseline == 'LT + AR_fixed':
             self.A = np.array([[1,1,0,0,0,0],[0,1,0,0,0,0],[0,0,0,0,0,0],[0,0,0,0,0,0],[0,0,0,0,self.phi_AR,0],[0,0,0,0,0,0]])
             self.Q = np.zeros((6,6))
             self.Q[-2,-2] = self.Sigma_AR

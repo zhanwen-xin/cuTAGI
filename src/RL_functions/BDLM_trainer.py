@@ -242,7 +242,7 @@ class BDLM_trainer:
             ax2.set_xlabel('Time step')
 
             # plt.savefig('hidden_states_epoch0.pdf')
-            filename = f'saved_results/LSTM_train_CASC_LGA007EFAPRG910_2024_07/hs_epoch_#{epoch}.png'
+            filename = f'saved_results/LSTM_train_synthetic/hs_epoch_#{epoch}.png'
             plt.savefig(filename)
             plt.close()
 
