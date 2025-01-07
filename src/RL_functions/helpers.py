@@ -11,12 +11,16 @@ def build_matrices(components, time_step, hyperparameters, current_time_stamp = 
     Input: list of component names (strings)
     Output: dictionary with component names as keys and their index in the list as values
     '''
+    # Determine if 'phi' is in hyperparameters['trend']
+    if 'trend' in hyperparameters:
+        if 'phi' not in hyperparameters['trend']:
+            hyperparameters['trend']['phi'] = 1.0
     A = np.array([])
     F = np.array([])
     Q = np.array([])
     for i, component in enumerate(components):
         if component == 'trend':
-            A = scipy.linalg.block_diag(A, np.array([[1.,time_step],[0.,1.]]))
+            A = scipy.linalg.block_diag(A, np.array([[1.,time_step],[0.,1.]]) * hyperparameters['trend']['phi'])
             F = np.hstack((F, np.array([1.,0.])))
             Q = scipy.linalg.block_diag(Q, hyperparameters['trend']['process_error_var'] * \
                                                   np.array([[time_step**4/4,time_step**3/2], [time_step**3/2,time_step]]))

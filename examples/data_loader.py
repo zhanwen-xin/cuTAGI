@@ -461,6 +461,8 @@ class SyntheticTimeSeriesDataloader:
         self.add_anomaly = add_anomaly
         self.anomaly_magnitude = anomaly_magnitude
         self.anomaly_start = anomaly_start
+        x = self.load_data_from_csv(self.x_file, select_column=self.select_column)
+        self.anomaly_start2 = anomaly_start + int((x.shape[0]-26-65)/2)
         self.time_covariates = time_covariates # for adding time covariates
         self.dataset = self.process_data()
 
@@ -515,7 +517,7 @@ class SyntheticTimeSeriesDataloader:
             else:
                 for i in range(self.anomaly_start, x.shape[0]):
                     x[i] += self.anomaly_magnitude[0] * (i - self.anomaly_start)
-                for i in range(self.anomaly_start + int((x.shape[0]-26-65)/2), x.shape[0]):
+                for i in range(self.anomaly_start2, x.shape[0]):
                     x[i] += self.anomaly_magnitude[1] * (i - self.anomaly_start - int((x.shape[0]-26-65)/2))
 
         # # Remove all the columns except the first one, no explanatory variable is used

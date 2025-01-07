@@ -288,7 +288,10 @@ class regime_change_detection_tagiV():
         anm_positions_train = np.random.randint(step_look_back + self.trained_BDLM.input_seq_len, 
                                                    int((num_steps_per_episode-step_look_back + self.trained_BDLM.input_seq_len)/2), 
                                                    num_episodes-validation_episode_num)
-        anm_magnitudes_train = np.random.uniform(anomaly_range[0], anomaly_range[1], (num_episodes-validation_episode_num, 2))
+        # anm_magnitudes_train = np.random.uniform(anomaly_range[0], anomaly_range[1], (num_episodes-validation_episode_num, 2))
+        
+        # anm_mag = anomaly_range[1]
+        # anm_mag_decrease = anm_mag / num_episodes * 20
 
         # np.random.seed(int(time.time() * 1000)% (2**32 - 1))
 
@@ -309,15 +312,35 @@ class regime_change_detection_tagiV():
             # anm_pos = np.random.randint(step_look_back + self.trained_BDLM.input_seq_len, int((num_steps_per_episode-step_look_back + self.trained_BDLM.input_seq_len)/2))
             anm_pos = anm_positions_train[i_episode]
 
-            sample = random.random()
-            if sample < abnormal_ts_percentage:
+            # For the first 20 episodes, don't inject anomaly
+            if i_episode < 1001:
+                train_dtl = SyntheticTimeSeriesDataloader(
+                    x_file=self.observation_save_path,
+                    select_column=i_episode,
+                    date_time_file=self.datetime_save_path,
+                    add_anomaly = False,
+                    x_mean=self.trained_BDLM.train_dtl.x_mean,
+                    x_std=self.trained_BDLM.train_dtl.x_std,
+                    output_col=self.trained_BDLM.output_col,
+                    input_seq_len=self.trained_BDLM.input_seq_len,
+                    output_seq_len=self.trained_BDLM.output_seq_len,
+                    num_features=self.trained_BDLM.num_features,
+                    stride=self.trained_BDLM.seq_stride,
+                    time_covariates=self.trained_BDLM.time_covariates,
+                )
+                # anomaly_injected = False # train_dtl.add_anomaly = False
+            else:
+                # Start with anm_mag, then after every 20 episodes, decrease the magnitude by anm_mag_decrease
+                # if i_episode % 20 == 0 and i_episode !=20:
+                #     anm_mag -= anm_mag_decrease
+
                 train_dtl = SyntheticTimeSeriesDataloader(
                     x_file=self.observation_save_path,
                     select_column=i_episode,
                     date_time_file=self.datetime_save_path,
                     add_anomaly = True,
-                    # anomaly_magnitude=[np.random.uniform(anomaly_range[0], anomaly_range[1]), np.random.uniform(anomaly_range[0], anomaly_range[1])],
-                    anomaly_magnitude=anm_magnitudes_train[i_episode],
+                    anomaly_magnitude=[np.random.uniform(anomaly_range[0], anomaly_range[1]), np.random.uniform(anomaly_range[0], anomaly_range[1])],
+                    # anomaly_magnitude=np.random.choice([1, -1]) * anm_mag,
                     anomaly_start=anm_pos,
                     x_mean=self.trained_BDLM.train_dtl.x_mean,
                     x_std=self.trained_BDLM.train_dtl.x_std,
@@ -328,22 +351,8 @@ class regime_change_detection_tagiV():
                     stride=self.trained_BDLM.seq_stride,
                     time_covariates=self.trained_BDLM.time_covariates,
                 )
-                anomaly_injected = True
-            else:
-                train_dtl = SyntheticTimeSeriesDataloader(
-                    x_file=self.observation_save_path,
-                    select_column = i_episode,
-                    date_time_file=self.datetime_save_path,
-                    x_mean=self.trained_BDLM.train_dtl.x_mean,
-                    x_std=self.trained_BDLM.train_dtl.x_std,
-                    output_col=self.trained_BDLM.output_col,
-                    input_seq_len=self.trained_BDLM.input_seq_len,
-                    output_seq_len=self.trained_BDLM.output_seq_len,
-                    num_features=self.trained_BDLM.num_features,
-                    stride=self.trained_BDLM.seq_stride,
-                    time_covariates=self.trained_BDLM.time_covariates,
-                )
-                anomaly_injected = False
+                # anomaly_injected = True # train_dtl.add_anomaly = True
+                # train_dtl.anomaly_start = anm_pos, train_dtl.anomaly_start2 (starting from 64+26)
 
             env = LSTM_KF_Env(render_mode=None, data_loader=train_dtl, step_look_back=step_look_back)
 
@@ -370,13 +379,37 @@ class regime_change_detection_tagiV():
             Q_values_all = []
             Q_var_all = []
             Q_var_epstic_all = []
+            first_trigger = False
             for t in count():
                 action = self._select_action(state)
-                if i_episode < 5:
-                    # 5% of the time, take action 1
-                    action = action * 0 + np.random.choice([0, 1], p=[0.95, 0.05])          
+                # if i_episode < 5:
+                #     # 5% of the time, take action 1
+                #     action = action * 0 + np.random.choice([0, 1], p=[0.95, 0.05])          
 
                 observation, reward, terminated, truncated, info = env.step(action.item(), cost_intervention=self.cost_intervention)
+
+                # Modify reward outside environment!
+                if action.item() == 1:
+                    trigger_time = t + step_look_back + self.trained_BDLM.input_seq_len
+                    if first_trigger is False:
+                        if train_dtl.add_anomaly is False:
+                            reward = reward * 0 + -1
+                        else:
+                            if trigger_time > train_dtl.anomaly_start:
+                                reward = reward * 0 + 1
+                            else:
+                                reward = reward * 0 + -1
+                    else:
+                        if train_dtl.add_anomaly is False:
+                            reward = reward * 0 + -1
+                        else:
+                            if trigger_time > train_dtl.anomaly_start2:
+                                reward = reward * 0 + 1
+                            else:
+                                reward = reward * 0 + -1
+                    first_trigger = True
+                else:
+                    reward = reward * 0
 
                 Q_values_t, var_Q, epist_var_Q, alea_var_Q = self._track_Qvalues(state)
 
@@ -481,7 +514,7 @@ class regime_change_detection_tagiV():
                     ax0.set_ylabel('y')
                     delta_max_min = np.max(mu_prediction_one_episode) - np.min(mu_prediction_one_episode)
                     ax0.set_ylim(np.min(mu_prediction_one_episode)-0.05*delta_max_min, np.max(mu_prediction_one_episode)+0.05*delta_max_min)
-                    if anomaly_injected:
+                    if train_dtl.add_anomaly:
                         anomaly_pos = timesteps[anm_pos - self.trained_BDLM.input_seq_len]
                         anomaly_pos2 = timesteps[anm_pos+int((len(timesteps)-65)/2)-self.trained_BDLM.input_seq_len]
                         ax0.axvline(x=anomaly_pos, color='gray', linestyle='--')
@@ -571,7 +604,6 @@ class regime_change_detection_tagiV():
                             stride=self.trained_BDLM.seq_stride,
                             time_covariates=self.trained_BDLM.time_covariates,
                         )
-                        anomaly_injected = True
 
                         env = LSTM_KF_Env(render_mode=None, data_loader=train_dtl, step_look_back=step_look_back)
                         state, info = env.reset(z=init_z, Sz=init_Sz, mu_preds_lstm = copy.deepcopy(init_mu_preds_lstm), var_preds_lstm = copy.deepcopy(init_var_preds_lstm),
@@ -985,7 +1017,7 @@ class regime_change_detection_tagiV():
 
         # Compute the expected Q values
         # Scale the reward so that the Q value is bounded between 0 and 1
-        reward_batch = reward_batch * (1-self.GAMMA)/np.abs(self.mean_R + self.std_R)
+        # reward_batch = reward_batch * (1-self.GAMMA)/np.abs(self.mean_R + self.std_R)
         expected_state_values_mu = np.array((next_state_values_mu * self.GAMMA) + reward_batch)
         expected_state_values_var = np.array((next_state_values_var * self.GAMMA**2))
 
