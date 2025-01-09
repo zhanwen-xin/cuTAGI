@@ -151,7 +151,7 @@ def base_drift_candidate_model(baseline_process_error_var, trigger_pos, data_gen
         ############ Estimate probabilities ############
         ################################################
 
-        ####### Likelihood when intervention is taken ######
+        ####### Likelihood when intervention is taken #######
         x_last_step['mu'][0] += x_last_step_d['mu'][0]
         x_last_step['mu'][1] += x_last_step_d['mu'][1]
         x_last_step['var'][0,0] += x_last_step_d['var'][0,0]
@@ -159,6 +159,8 @@ def base_drift_candidate_model(baseline_process_error_var, trigger_pos, data_gen
         x_last_step['mu'][-1] = x_last_step_d['mu'][-1]
         x_last_step['var'][-1,-1] = x_last_step_d['var'][-1,-1]
         x_last_step_d = x_init_d
+        # x_last_step_d['mu'][-1] = x_last_step['mu'][-1]
+        # x_last_step_d['var'][-1,-1] = x_last_step['var'][-1,-1]
 
         # # Base model
         y_pred, x_pred, _ = kf_dup1.predict(x_last_step)
@@ -204,17 +206,17 @@ def base_drift_candidate_model(baseline_process_error_var, trigger_pos, data_gen
         ## Base model 
         if i+1 in trigger_pos:
             # Assign the drrift hidden states to the base ones
-            # x_last_step['mu'][0] += x_last_step_d['mu'][0]
-            # x_last_step['mu'][1] += x_last_step_d['mu'][1]
-            # x_last_step['var'][0,0] += x_last_step_d['var'][0,0]
-            # x_last_step['var'][1,1] += x_last_step_d['var'][1,1]
+            x_last_step['mu'][0] += x_last_step_d['mu'][0]
+            x_last_step['mu'][1] += x_last_step_d['mu'][1]
+            x_last_step['var'][0,0] += x_last_step_d['var'][0,0]
+            x_last_step['var'][1,1] += x_last_step_d['var'][1,1]
             x_last_step['mu'][-1] = x_last_step_d['mu'][-1]
             x_last_step['var'][-1,-1] = x_last_step_d['var'][-1,-1]
 
             # Perfect intervention
-            # LT anomaly
-            x_last_step['mu'][0] = -0.2294157338705618 * (i+1 - 400)
-            x_last_step['mu'][1] = -0.2294157338705618
+            # # LT anomaly
+            # x_last_step['mu'][0] = -0.2294157338705618 * (i+1 - 400)
+            # x_last_step['mu'][1] = -0.2294157338705618
 
             # # LL anomaly
             # x_last_step['mu'][0] += -20
@@ -260,6 +262,10 @@ def base_drift_candidate_model(baseline_process_error_var, trigger_pos, data_gen
         # prob_no_action = prior_a[0] * x_likelihood_na * y_likelihood_na / (prior_a[1] * x_likelihood_a * y_likelihood_a + prior_a[0] * x_likelihood_na * y_likelihood_na)
         # prob_action = 1 - prob_no_action
         # prob_action_all.append(prob_action)
+    
+    scale_factor_Lx = mv_normal_x.pdf(x_samples_mean)
+    likelihood_x_na = likelihood_x_na / scale_factor_Lx
+    likelihood_x_a = likelihood_x_a / scale_factor_Lx
 
     return likelihood_x_na, likelihood_x_a, likelihood_y_na, likelihood_y_a
 
