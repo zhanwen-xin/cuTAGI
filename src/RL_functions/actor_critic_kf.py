@@ -103,17 +103,16 @@ def critic(base_kf_model, drift_kf_model, x_last_step, x_last_step_d, interventi
     #####################################################
     ####### Likelihood when intervention is taken #######
     #####################################################
-    x_ls['mu'][0] += intervention_hidden_state['mu'][0]
-    x_ls['mu'][1] += intervention_hidden_state['mu'][1]
-    x_ls['var'][0,0] += intervention_hidden_state['var'][0,0]
-    x_ls['var'][1,1] += intervention_hidden_state['var'][1,1]
-    x_ls['mu'][-1] = intervention_hidden_state['mu'][-1]
-    # x_ls['mu'][-1] = 0
-    x_ls['var'][-1,-1] = intervention_hidden_state['var'][-1,-1]
+    # x_ls['mu'][0] += intervention_hidden_state['mu'][0]
+    # x_ls['mu'][1] += intervention_hidden_state['mu'][1]
+    # x_ls['var'][0,0] += intervention_hidden_state['var'][0,0]
+    # x_ls['var'][1,1] += intervention_hidden_state['var'][1,1]
+    # x_ls['mu'][-1] = intervention_hidden_state['mu'][-1]
+    # x_ls['var'][-1,-1] = intervention_hidden_state['var'][-1,-1]
 
-    # x_ls = copy.deepcopy(intervention_hidden_state)
+    x_ls = copy.deepcopy(intervention_hidden_state)
 
-    x_ls_d = drift_model_initial_state
+    x_ls_d = copy.deepcopy(drift_model_initial_state)
     x_ls_d['mu'][-1] = x_ls['mu'][-1]
     x_ls_d['var'][-1,-1] = x_ls['var'][-1,-1]
 
@@ -160,16 +159,15 @@ def critic(base_kf_model, drift_kf_model, x_last_step, x_last_step_d, interventi
 def actor(base_kf_model, x_last_step, take_intervention, intervention_hidden_state, observation):
     ## Actor
     if take_intervention:
-        # Assign the drrift hidden states to the base ones
-        x_last_step['mu'][0] += intervention_hidden_state['mu'][0]
-        x_last_step['mu'][1] += intervention_hidden_state['mu'][1]
-        x_last_step['var'][0,0] += intervention_hidden_state['var'][0,0]
-        x_last_step['var'][1,1] += intervention_hidden_state['var'][1,1]
-        x_last_step['mu'][-1] = intervention_hidden_state['mu'][-1]
-        # x_last_step['mu'][-1] = 0
-        x_last_step['var'][-1,-1] = intervention_hidden_state['var'][-1,-1]
+        # # Assign the drrift hidden states to the base ones
+        # x_last_step['mu'][0] += intervention_hidden_state['mu'][0]
+        # x_last_step['mu'][1] += intervention_hidden_state['mu'][1]
+        # x_last_step['var'][0,0] += intervention_hidden_state['var'][0,0]
+        # x_last_step['var'][1,1] += intervention_hidden_state['var'][1,1]
+        # x_last_step['mu'][-1] = intervention_hidden_state['mu'][-1]
+        # x_last_step['var'][-1,-1] = intervention_hidden_state['var'][-1,-1]
 
-        # x_last_step = copy.deepcopy(intervention_hidden_state)
+        x_last_step = copy.deepcopy(intervention_hidden_state)
 
     # Base model
     y_pred, x_pred, _ = base_kf_model.predict(x_last_step)
