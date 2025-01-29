@@ -400,3 +400,23 @@ class DataProcessor():
         y[idxnan] = np.nan
 
         return resampled_datenum, y
+
+
+def get_look_back_time_steps(current_step, step_look_back = 64):
+    look_back_step_list = [0]
+    current = 1
+    while current <=  step_look_back:
+        look_back_step_list.append(current)
+        current *= 2
+    look_back_step_list = [current_step - i for i in look_back_step_list]
+
+    return look_back_step_list
+
+def hidden_states_collector(current_step, hidden_states_all_step):
+    hidden_states_all_step_numpy = np.copy(hidden_states_all_step)
+    hidden_states_all_step_numpy = {'mu': np.array(hidden_states_all_step['mu']), \
+                                'var': np.array(hidden_states_all_step['var'])}
+    look_back_steps_list = get_look_back_time_steps(current_step)
+    hidden_states_collected = {'mu': hidden_states_all_step_numpy['mu'][look_back_steps_list], \
+                                'var': hidden_states_all_step_numpy['var'][look_back_steps_list]}
+    return hidden_states_collected
