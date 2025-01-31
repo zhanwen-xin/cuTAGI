@@ -52,14 +52,15 @@ def main(num_epochs: int = 50, batch_size: int = 10):
         for x, y in batch_iter:
             # Feed forward
             # print(x)
-            # print(type(x))
+            # print(type(x[0]))
             # print(x.shape)
             m_pred, _ = net(x)
 
             # Update output layer
             print(y)
-            print(type(y))
-            print(y.shape)
+            print(type(y[0]))
+            1/0
+            # print(y.shape)
             m_pred, _ = net(x)
             out_updater.update_heteros(
                 output_states=net.output_z_buffer,
