@@ -462,7 +462,10 @@ class SyntheticTimeSeriesDataloader:
         self.anomaly_magnitude = anomaly_magnitude
         self.anomaly_start = anomaly_start
         x = self.load_data_from_csv(self.x_file, select_column=self.select_column)
-        self.anomaly_start2 = anomaly_start + int((x.shape[0]-26-65)/2)
+        if isinstance(self.anomaly_magnitude, float):
+            self.anomaly_start2 = None
+        else:
+            self.anomaly_start2 = anomaly_start + int((x.shape[0]-26-65)/2) # for two anomalies, used in RL
         self.time_covariates = time_covariates # for adding time covariates
         self.dataset = self.process_data()
 

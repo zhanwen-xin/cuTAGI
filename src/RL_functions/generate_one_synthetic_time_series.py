@@ -173,3 +173,12 @@ class generate_one_synthetic_time_series:
         R = np.array([hyperparameters['observation']['error']])
 
         return A, F, Q, R
+
+
+def generate_datetime_values(start_datetime, num_values, time_step_interval):
+    datetime_values = []
+    current_datetime = start_datetime
+    for _ in range(num_values):
+        datetime_values.append(current_datetime.strftime('%Y-%m-%d %I:%M:%S'))
+        current_datetime += timedelta(days=time_step_interval)
+    return datetime_values
