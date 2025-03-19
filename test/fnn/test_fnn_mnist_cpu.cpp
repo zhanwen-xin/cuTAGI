@@ -1,13 +1,3 @@
-///////////////////////////////////////////////////////////////////////////////
-// File:         test_fnn_mnist_cpu.cpp
-// Description:  ...
-// Authors:      Luong-Ha Nguyen & James-A. Goulet
-// Created:      November 25, 2023
-// Updated:      February 18, 2024
-// Contact:      luongha.nguyen@gmail.com & james.goulet@polymtl.ca
-// License:      This code is released under the MIT License.
-////////////////////////////////////////////////////////////////////////////////
-
 #include "test_fnn_mnist_cpu.h"
 
 #include <chrono>
@@ -20,12 +10,12 @@
 
 #include "../../include/activation.h"
 #include "../../include/base_output_updater.h"
+#include "../../include/batchnorm_layer.h"
 #include "../../include/conv2d_layer.h"
 #include "../../include/data_struct.h"
 #include "../../include/dataloader.h"
-// #include "../../include/debugger.h"
+#include "../../include/layernorm_layer.h"
 #include "../../include/linear_layer.h"
-#include "../../include/norm_layer.h"
 #include "../../include/pooling_layer.h"
 #include "../../include/sequential.h"
 
@@ -66,28 +56,28 @@ void fnn_mnist() {
     //////////////////////////////////////////////////////////////////////
     // TAGI network
     //////////////////////////////////////////////////////////////////////
-    // Sequential model(Linear(784, 4 * 4096), ReLU(), Linear(4 * 4096, 4 *
-    // 4096),
-    //                  ReLU(), Linear(4 * 4096, 11));
+    // Sequential model(Linear(784, 16), ReLU(), Linear(32, 16), ReLU(),
+    //                  Linear(16, 11));
 
     // Sequential model(Linear(784, 1024), BatchNorm2d(1024), ReLU(),
     //                  Linear(1024, 1024), BatchNorm2d(1024), ReLU(),
     //                  Linear(1024, 11));
 
-    // Sequential model(Linear(784, 100), LayerNorm(std::vector<int>({100})),
-    //                  ReLU(), Linear(100, 100),
-    //                  LayerNorm(std::vector<int>({100})), ReLU(),
-    //                  Linear(100, 11));
+    Sequential model(Linear(784, 100), LayerNorm(std::vector<int>({100})),
+                     ReLU(), Linear(100, 100),
+                     LayerNorm(std::vector<int>({100})), ReLU(),
+                     Linear(100, 11));
 
     // Sequential model(Conv2d(1, 16, 4, true, 1, 1, 1, 28, 28), ReLU(),
     //                  AvgPool2d(3, 2), Conv2d(16, 32, 5), ReLU(),
     //                  AvgPool2d(3, 2), Linear(32 * 4 * 4, 100), ReLU(),
     //                  Linear(100, 11));
 
-    Sequential model(Conv2d(1, 32, 4, false, 1, 1, 1, 28, 28), BatchNorm2d(32),
-                     ReLU(), AvgPool2d(3, 2), Conv2d(32, 64, 5, false),
-                     BatchNorm2d(64), ReLU(), AvgPool2d(3, 2),
-                     Linear(64 * 4 * 4, 128), ReLU(), Linear(128, 11));
+    // Sequential model(Conv2d(1, 32, 4, false, 1, 1, 1, 28, 28),
+    // BatchNorm2d(32),
+    //                  ReLU(), AvgPool2d(3, 2), Conv2d(32, 64, 5, false),
+    //                  BatchNorm2d(64), ReLU(), AvgPool2d(3, 2),
+    //                  Linear(64 * 4 * 4, 128), ReLU(), Linear(128, 11));
 
     // Sequential model(Conv2d(1, 16, 4, false, 1, 1, 1, 28, 28),
     //                  LayerNorm(std::vector<int>({16, 27, 27})), ReLU(),
@@ -96,8 +86,8 @@ void fnn_mnist() {
     //                  AvgPool2d(3, 2), Linear(32 * 4 * 4, 100), ReLU(),
     //                  Linear(100, 11));
 
-    // model.set_threads(1);
-    model.to_device("cuda");
+    model.set_threads(1);
+    // model.to_device("cuda");
     // model.preinit_layer();
     // model.load("test_model/test_model.bin");
 
@@ -172,7 +162,7 @@ void fnn_mnist() {
         std::cout << "Epoch #" << e + 1 << "/" << n_epochs << "\n";
         std::cout << "Training...\n";
         auto start = std::chrono::steady_clock::now();
-        for (int i = 0; i < 1; i++) {
+        for (int i = 0; i < iters; i++) {
             // Load data
             get_batch_images_labels(train_db, data_idx, batch_size, i, x_batch,
                                     y_batch, idx_ud_batch, label_batch);

@@ -1,12 +1,3 @@
-///////////////////////////////////////////////////////////////////////////////
-// File:         base_layer.h
-// Description:  ...
-// Authors:      Luong-Ha Nguyen & James-A. Goulet
-// Created:      October 09, 2023
-// Updated:      April 26, 2024
-// Contact:      luongha.nguyen@gmail.com & james.goulet@polymtl.ca
-// License:      This code is released under the MIT License.
-////////////////////////////////////////////////////////////////////////////////
 #pragma once
 #include <fstream>
 #include <iostream>
@@ -51,6 +42,7 @@ class BaseLayer {
     bool bias = true;
     bool param_update = true;
     float cap_factor_update = 1.0f;
+    int neg_var_w_counter = 0;
 
     std::vector<float> mu_w;
     std::vector<float> var_w;
@@ -138,11 +130,23 @@ class BaseLayer {
                                  ". Cuda device is not available");
     };
 
+    // Get/load Parameters
+    virtual ParameterMap get_parameters_as_map(std::string suffix = "");
+    virtual void load_parameters_from_map(const ParameterMap &param_map,
+                                          const std::string &suffix = "");
+    virtual std::vector<ParameterTuple> parameters();
+
     // DEBUG
     virtual std::tuple<std::vector<float>, std::vector<float>>
     get_running_mean_var();
 
+    virtual std::tuple<
+        std::vector<std::vector<float>>, std::vector<std::vector<float>>,
+        std::vector<std::vector<float>>, std::vector<std::vector<float>>>
+    get_norm_mean_var();
+
     virtual void preinit_layer();
+    int get_neg_var_w_counter();
 
    protected:
     void allocate_bwd_vector(int size);

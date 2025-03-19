@@ -1,18 +1,10 @@
-///////////////////////////////////////////////////////////////////////////////
-// File:         base_layer_cuda.cuh
-// Description:  ...
-// Authors:      Luong-Ha Nguyen & James-A. Goulet
-// Created:      November 29, 2023
-// Updated:      April 26, 2024
-// Contact:      luongha.nguyen@gmail.com & james.goulet@polymtl.ca
-// License:      This code is released under the MIT License.
-////////////////////////////////////////////////////////////////////////////////
 #pragma once
 #include <iostream>
 #include <memory>
 #include <vector>
 
 #include "base_layer.h"
+#include "custom_logger.h"
 #include "data_struct_cuda.cuh"
 
 __global__ void fill_bwd_states_on_device(float const *mu_a_in,
@@ -31,6 +23,7 @@ class BaseLayerCuda : public BaseLayer {
     float *d_delta_var_w = nullptr;
     float *d_delta_mu_b = nullptr;
     float *d_delta_var_b = nullptr;
+    int *d_neg_var_count = nullptr;
     unsigned int num_cuda_threads = 16;
 
     BaseLayerCuda();
@@ -66,6 +59,14 @@ class BaseLayerCuda : public BaseLayer {
 
     void save(std::ofstream &file) override;
     void load(std::ifstream &file) override;
+
+    // Get Parameters
+    ParameterMap get_parameters_as_map(std::string suffix = "") override;
+    void load_parameters_from_map(const ParameterMap &param_map,
+                                  const std::string &suffix = "") override;
+    std::vector<ParameterTuple> parameters() override;
+
+    void copy_params_from(const BaseLayer &source);
 
    protected:
     virtual void allocate_param_memory();

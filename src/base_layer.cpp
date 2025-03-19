@@ -1,16 +1,8 @@
-///////////////////////////////////////////////////////////////////////////////
-// File:         base_layer.cpp
-// Description:  ...
-// Authors:      Luong-Ha Nguyen & James-A. Goulet
-// Created:      October 11, 2023
-// Updated:      April 18, 2024
-// Contact:      luongha.nguyen@gmail.com & james.goulet@polymtl.ca
-// License:      This code is released under the MIT License.
-////////////////////////////////////////////////////////////////////////////////
-
 #include "../include/base_layer.h"
 
 #include <cmath>
+
+#include "../include/custom_logger.h"
 
 InitArgs::InitArgs(size_t width, size_t height, size_t depth, int batch_size)
     : width(width), height(height), depth(depth), batch_size(batch_size) {}
@@ -74,10 +66,7 @@ void BaseLayer::allocate_bwd_vector(int new_size)
  */
 {
     if (new_size <= 0) {
-        throw std::invalid_argument(
-            "Error in file: " + std::string(__FILE__) +
-            " at line: " + std::to_string(__LINE__) +
-            " - Invalid size: " + std::to_string(new_size));
+        LOG(LogLevel::ERROR, "Invalid size: " + std::to_string(new_size));
     }
     this->bwd_states->set_size(new_size);
 }
@@ -114,7 +103,6 @@ void BaseLayer::raw_update_weights()
 
 void BaseLayer::raw_update_biases()
 /*
-
  */
 {
     if (this->bias) {
@@ -129,6 +117,7 @@ void BaseLayer::update_weights()
 /*
  */
 {
+    this->neg_var_w_counter = 0;
     for (int i = 0; i < this->mu_w.size(); i++) {
         float delta_mu_sign =
             (this->delta_mu_w[i] > 0) - (this->delta_mu_w[i] < 0);
@@ -139,9 +128,10 @@ void BaseLayer::update_weights()
         this->mu_w[i] +=
             delta_mu_sign * std::min(std::abs(delta_mu_w[i]), delta_bar);
         this->var_w[i] +=
-           delta_var_sign * std::min(std::abs(delta_var_w[i]), delta_bar);
+            delta_var_sign * std::min(std::abs(delta_var_w[i]), delta_bar);
         if (var_w[i] <= 0.0f) {
-            var_w[i] = 1E-5f; //TODO: replace by a parameter
+            var_w[i] = 1E-5f;  // TODO: replace by a parameter
+            this->neg_var_w_counter++;
         }
     }
 }
@@ -162,11 +152,11 @@ void BaseLayer::update_biases()
             this->mu_b[i] += delta_mu_sign *
                              std::min(std::abs(this->delta_mu_b[i]), delta_bar);
             this->var_b[i] +=
-                            delta_var_sign *
-                            std::min(std::abs(this->delta_var_b[i]), delta_bar);
+                delta_var_sign *
+                std::min(std::abs(this->delta_var_b[i]), delta_bar);
             if (var_b[i] <= 0.0f) {
-            var_b[i] = 1E-5f; //TODO: replace by a parameter
-        }
+                var_b[i] = 1E-5f;  // TODO: replace by a parameter
+            }
         }
     }
 }
@@ -188,7 +178,7 @@ Returns:
     if (batch_size == 1) {
         this->cap_factor_update = 0.1f;
     }
-    if (batch_size >1 && batch_size < 256) {
+    if (batch_size > 1 && batch_size < 256) {
         this->cap_factor_update = 1.0f;
     }
     if (batch_size >= 256) {
@@ -242,9 +232,7 @@ void BaseLayer::save(std::ofstream &file)
  */
 {
     if (!file.is_open()) {
-        throw std::runtime_error("Error in file: " + std::string(__FILE__) +
-                                 " at line: " + std::to_string(__LINE__) +
-                                 ". Failed to open file for saving");
+        LOG(LogLevel::ERROR, "Failed to open file for saving");
     }
 
     // Save the name length and name
@@ -273,9 +261,7 @@ void BaseLayer::load(std::ifstream &file)
  */
 {
     if (!file.is_open()) {
-        throw std::runtime_error("Error in file: " + std::string(__FILE__) +
-                                 " at line: " + std::to_string(__LINE__) +
-                                 ". Failed to open file for loading");
+        LOG(LogLevel::ERROR, "Failed to open file for loading");
     }
     // Load the name length and name
     auto layer_name = this->get_layer_info();
@@ -287,9 +273,7 @@ void BaseLayer::load(std::ifstream &file)
 
     // Check layer name
     if (layer_name != loaded_name) {
-        throw std::runtime_error("Error in file: " + std::string(__FILE__) +
-                                 " at line: " + std::to_string(__LINE__) +
-                                 ". Layer name are not match. Expected: " +
+        LOG(LogLevel::ERROR, "Layer name are not match. Expected: " +
                                  layer_name + ", Found: " + loaded_name);
     }
 
@@ -312,6 +296,50 @@ void BaseLayer::load(std::ifstream &file)
     }
 }
 
+ParameterMap BaseLayer::get_parameters_as_map(std::string suffix) {
+    std::string key = this->get_layer_name();
+    if (!suffix.empty()) {
+        key += "." + suffix;
+    }
+
+    ParameterTuple parameters =
+        std::make_tuple(this->mu_w, this->var_w, this->mu_b, this->var_b);
+
+    return {{key, parameters}};
+}
+
+void BaseLayer::load_parameters_from_map(const ParameterMap &param_map,
+                                         const std::string &suffix) {
+    // Generate the key for this layer
+    std::string key = this->get_layer_name();
+    if (!suffix.empty()) {
+        key += "." + suffix;
+    }
+
+    // Find the key in the provided map
+    auto it = param_map.find(key);
+    if (it == param_map.end()) {
+        LOG(LogLevel::ERROR, "Key " + key + " not found in parameter map.");
+    }
+
+    // Extract the parameters from the map
+    // print key
+    const auto &params = it->second;
+    if (!std::is_same<std::decay_t<decltype(params)>, ParameterTuple>::value) {
+        LOG(LogLevel::ERROR, "Parameter tuple for key " + key +
+                                 " must contain exactly 4 vectors.");
+    }
+
+    this->mu_w = std::get<0>(params);
+    this->var_w = std::get<1>(params);
+    this->mu_b = std::get<2>(params);
+    this->var_b = std::get<3>(params);
+}
+
+std::vector<ParameterTuple> BaseLayer::parameters() {
+    return {{this->mu_w, this->var_w, this->mu_b, this->var_b}};
+}
+
 std::tuple<std::vector<float>, std::vector<float>>
 BaseLayer::get_running_mean_var()
 /*
@@ -320,9 +348,22 @@ BaseLayer::get_running_mean_var()
     return {std::vector<float>(), std::vector<float>()};
 }
 
+std::tuple<std::vector<std::vector<float>>, std::vector<std::vector<float>>,
+           std::vector<std::vector<float>>, std::vector<std::vector<float>>>
+BaseLayer::get_norm_mean_var()
+/*
+ */
+{
+    return {
+        std::vector<std::vector<float>>(), std::vector<std::vector<float>>(),
+        std::vector<std::vector<float>>(), std::vector<std::vector<float>>()};
+}
+
 void BaseLayer::preinit_layer()
 /* Pre-initialize the layer property e.g., number of weights & biases
  */
 {
     // We do nothing by default
 }
+
+int BaseLayer::get_neg_var_w_counter() { return this->neg_var_w_counter; }

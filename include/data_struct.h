@@ -1,16 +1,15 @@
-///////////////////////////////////////////////////////////////////////////////
-// File:         data_struct.h
-// Description:  ...
-// Authors:      Luong-Ha Nguyen & James-A. Goulet
-// Created:      December 01, 2023
-// Updated:      April 02, 2024
-// Contact:      luongha.nguyen@gmail.com & james.goulet@polymtl.ca
-// License:      This code is released under the MIT License.
-////////////////////////////////////////////////////////////////////////////////
 #pragma once
 #include <iostream>
 #include <string>
+#include <tuple>
+#include <unordered_map>
 #include <vector>
+
+// Parameter Data Structure
+
+using ParameterTuple = std::tuple<std::vector<float>, std::vector<float>,
+                                  std::vector<float>, std::vector<float>>;
+using ParameterMap = std::unordered_map<std::string, ParameterTuple>;
 
 class BaseHiddenStates {
    public:

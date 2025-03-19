@@ -1,13 +1,3 @@
-///////////////////////////////////////////////////////////////////////////////
-// File:         lstm_layer.cpp
-// Description:  Header file for Long-Short Term Memory (LSTM) forward pass
-//               in TAGI
-// Authors:      Luong-Ha Nguyen & James-A. Goulet
-// Created:      March 22, 2024
-// Updated:      March 27, 2024
-// Contact:      luongha.nguyen@gmail.com & james.goulet@polymtl.ca
-// License:      This code is released under the MIT License.
-////////////////////////////////////////////////////////////////////////////////
 
 #include "../include/lstm_layer.h"
 
@@ -16,6 +6,7 @@
 
 #include "../include/activation.h"
 #include "../include/common.h"
+#include "../include/custom_logger.h"
 #include "../include/param_init.h"
 
 #ifdef USE_CUDA
@@ -1260,6 +1251,14 @@ void LSTM::forward(BaseHiddenStates &input_states,
 /*
  */
 {
+    // Checkout input size
+    if (this->input_size * this->seq_len != input_states.actual_size) {
+        std::string message = "Input size mismatch: " +
+                              std::to_string(this->input_size * this->seq_len) +
+                              " vs " + std::to_string(input_states.actual_size);
+        LOG(LogLevel::ERROR, message);
+    }
+
     int batch_size = input_states.block_size;
     this->set_cap_factor_udapte(batch_size);
 
@@ -1502,9 +1501,15 @@ void LSTM::backward(BaseDeltaStates &input_delta_states,
 #ifdef USE_CUDA
 std::unique_ptr<BaseLayer> LSTM::to_cuda() {
     this->device = "cuda";
-    return std::make_unique<LSTMCuda>(this->input_size, this->output_size,
-                                      this->seq_len, this->bias, this->gain_w,
-                                      this->gain_b, this->init_method);
+    auto cuda_layer = std::make_unique<LSTMCuda>(
+        this->input_size, this->output_size, this->seq_len, this->bias,
+        this->gain_w, this->gain_b, this->init_method);
+
+    // Move params from this->layer to cuda_layer
+    auto base_cuda = dynamic_cast<BaseLayerCuda *>(cuda_layer.get());
+    base_cuda->copy_params_from(*this);
+
+    return cuda_layer;
 }
 #endif
 

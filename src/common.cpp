@@ -1,13 +1,10 @@
-///////////////////////////////////////////////////////////////////////////////
-// File:         common.cpp
-// Description:  Common function used for computing indices for TAGI
-// Authors:      Luong-Ha Nguyen & James-A. Goulet
-// Created:      January 15, 2022
-// Updated:      April 12, 2023
-// Contact:      luongha.nguyen@gmail.com & james.goulet@polymtl.ca
-// License:      This code is released under the MIT License.
-///////////////////////////////////////////////////////////////////////////////
 #include "../include/common.h"
+
+#include "../include/custom_logger.h"
+
+#ifdef USE_CUDA
+#include <cuda_runtime.h>
+#endif
 
 std::string get_current_dir() {
     char buff[FILENAME_MAX];  // create string buffer to hold path
@@ -325,7 +322,7 @@ float normpdf_cpu(float x, float mu, float sigma)
 /*Probability density function of Normal distribution*/
 {
     if (sigma < 0.0f) {
-        throw std::invalid_argument("Sigma value is negative");
+        LOG(LogLevel::ERROR, "Sigma value is negative");
     }
     const float PI = 3.14159265358979323846f;
     float prob_pdf = (1 / (sigma * pow(2 * PI, 0.5))) *
@@ -346,4 +343,53 @@ int get_sub_layer_idx(std::vector<int> &layer, int curr_layer,
         }
     }
     return sub_idx;
+}
+
+///////////////////////////////////////////////////////
+// SEED MANAGER
+///////////////////////////////////////////////////////
+void manual_seed(int seed) { SeedManager::get_instance().set_seed(seed); }
+
+std::mt19937 &get_random_engine() {
+    return SeedManager::get_instance().get_engine();
+}
+
+///////////////////////////////////////////////////////
+// CHECK CUDA
+///////////////////////////////////////////////////////
+bool is_cuda_available() {
+#ifdef USE_CUDA
+    int deviceCount = 0;
+    cudaError_t error = cudaGetDeviceCount(&deviceCount);
+
+    if (error != cudaSuccess) {
+        std::cerr << "CUDA runtime error: " << cudaGetErrorString(error)
+                  << std::endl;
+        return false;
+    }
+    return deviceCount > 0;
+#else
+    return false;
+#endif
+}
+
+///////////////////////////////////////////////////////
+// NORM LAYER
+///////////////////////////////////////////////////////
+void delta_param_sum(const std::vector<float> &delta_mu_e,
+                     const std::vector<float> &delta_var_e, int wihi, int fi,
+                     int batch_size, std::vector<float> &delta_mu,
+                     std::vector<float> &delta_var) {
+    for (int col = 0; col < fi; col++) {
+        float sum_delta_mu = 0.0f;
+        float sum_delta_var = 0.0f;
+        for (int i = 0; i < wihi * batch_size; i++)  // n = wihi * fi
+        {
+            int idx = (i / wihi) * wihi * fi + i % wihi + col * wihi;
+            sum_delta_mu += delta_mu_e[idx];
+            sum_delta_var += delta_var_e[idx];
+        }
+        delta_mu[col] = sum_delta_mu;
+        delta_var[col] = sum_delta_var;
+    }
 }

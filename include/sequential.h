@@ -1,12 +1,3 @@
-///////////////////////////////////////////////////////////////////////////////
-// File:         sequential.h
-// Description:  ...
-// Authors:      Luong-Ha Nguyen & James-A. Goulet
-// Created:      October 09, 2023
-// Updated:      March 18, 2024
-// Contact:      luongha.nguyen@gmail.com & james.goulet@polymtl.ca
-// License:      This code is released under the MIT License.
-////////////////////////////////////////////////////////////////////////////////
 #pragma once
 
 #include <algorithm>
@@ -32,6 +23,7 @@
 #include <pybind11/stl.h>
 
 #include <map>
+#include <unordered_map>
 
 class Sequential {
    public:
@@ -113,10 +105,7 @@ class Sequential {
 
     void step();
 
-    // DEBUG
-    void output_to_host();
-    void delta_z_to_host();
-    void preinit_layer();
+    void reset_lstm_states();
 
     // Utility function to get layer stack info
     std::string get_layer_stack_info() const;
@@ -130,17 +119,10 @@ class Sequential {
 
     void load_csv(const std::string& filename);
 
-    std::vector<std::reference_wrapper<std::vector<float>>> parameters();
+    std::vector<ParameterTuple> parameters();
 
-    std::map<std::string, std::tuple<std::vector<float>, std::vector<float>,
-                                     std::vector<float>, std::vector<float>>>
-    get_state_dict();
-
-    void load_state_dict(
-        const std::map<std::string,
-                       std::tuple<std::vector<float>, std::vector<float>,
-                                  std::vector<float>, std::vector<float>>>&
-            state_dict);
+    ParameterMap state_dict();
+    void load_state_dict(const ParameterMap& state_dict);
 
     // Copy model params
     void params_from(const Sequential& ref_model);
@@ -158,6 +140,17 @@ class Sequential {
 
     std::tuple<pybind11::array_t<float>, pybind11::array_t<float>>
     get_input_states();
+
+    // DEBUG
+    void output_to_host();
+    void delta_z_to_host();
+    void preinit_layer();
+    std::unordered_map<std::string, std::tuple<std::vector<std::vector<float>>,
+                                               std::vector<std::vector<float>>,
+                                               std::vector<std::vector<float>>,
+                                               std::vector<std::vector<float>>>>
+    get_norm_mean_var();
+    std::unordered_map<std::string, int> get_neg_var_w_counter();
 
    private:
     void compute_input_output_size();

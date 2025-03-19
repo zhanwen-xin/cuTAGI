@@ -1,15 +1,7 @@
-///////////////////////////////////////////////////////////////////////////////
-// File:         linear_layer.cpp
-// Description:  ...
-// Authors:      Luong-Ha Nguyen & James-A. Goulet
-// Created:      September 20, 2023
-// Updated:      August 06, 2024
-// Contact:      luongha.nguyen@gmail.com & james.goulet@polymtl.ca
-// License:      This code is released under the MIT License.
-////////////////////////////////////////////////////////////////////////////////
 #include "../include/linear_layer.h"
 
 #include "../include/common.h"
+#include "../include/custom_logger.h"
 
 #ifdef USE_CUDA
 #include "../include/linear_layer_cuda.cuh"
@@ -538,6 +530,14 @@ void Linear::forward(BaseHiddenStates &input_states,
     int batch_size = input_states.block_size;
     this->set_cap_factor_udapte(batch_size);
 
+    // Checkout input size
+    if (this->input_size != input_states.actual_size) {
+        std::string message =
+            "Input size mismatch: " + std::to_string(this->input_size) +
+            " vs " + std::to_string(input_states.actual_size);
+        LOG(LogLevel::ERROR, message);
+    }
+
     // Forward pass
     if (this->num_threads > 1) {
         linear_fwd_mean_var_mp(this->mu_w, this->var_w, this->mu_b, this->var_b,
@@ -632,8 +632,14 @@ void Linear::backward(BaseDeltaStates &input_delta_states,
 #ifdef USE_CUDA
 std::unique_ptr<BaseLayer> Linear::to_cuda() {
     this->device = "cuda";
-    return std::make_unique<LinearCuda>(this->input_size, this->output_size,
-                                        this->bias, this->gain_w, this->gain_b,
-                                        this->init_method);
+    auto cuda_layer = std::make_unique<LinearCuda>(
+        this->input_size, this->output_size, this->bias, this->gain_w,
+        this->gain_b, this->init_method);
+
+    // Move params from this->layer to cuda_layer
+    auto base_cuda = dynamic_cast<BaseLayerCuda *>(cuda_layer.get());
+    base_cuda->copy_params_from(*this);
+
+    return cuda_layer;
 }
 #endif

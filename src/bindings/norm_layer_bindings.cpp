@@ -1,19 +1,10 @@
-///////////////////////////////////////////////////////////////////////////////
-// File:         norm_layer_bindings.cpp
-// Description:  ...
-// Authors:      Luong-Ha Nguyen & James-A. Goulet
-// Created:      February 08, 2024
-// Updated:      April 12, 2024
-// Contact:      luongha.nguyen@gmail.com & james.goulet@polymtl.ca
-// License:      This code is released under the MIT License.
-////////////////////////////////////////////////////////////////////////////////
-
 #include "../include/bindings/norm_layer_bindings.h"
 
 #include <pybind11/numpy.h>
 #include <pybind11/stl.h>
 
-#include "../include/norm_layer.h"
+#include "../include/batchnorm_layer.h"
+#include "../include/layernorm_layer.h"
 
 void bind_layernorm_layer(pybind11::module_& modo)
 /*
@@ -38,9 +29,11 @@ void bind_batchnorm_layer(pybind11::module_& modo)
 {
     pybind11::class_<BatchNorm2d, std::shared_ptr<BatchNorm2d>, BaseLayer>(
         modo, "BatchNorm2d")
-        .def(pybind11::init<int, float, float, bool>(),
+        .def(pybind11::init<int, float, float, bool, float, float>(),
              pybind11::arg("num_features"), pybind11::arg("eps") = 1e-4,
-             pybind11::arg("mometum") = 0.9, pybind11::arg("bias") = true)
+             pybind11::arg("mometum") = 0.9, pybind11::arg("bias") = true,
+             pybind11::arg("gain_weight") = 1.0,
+             pybind11::arg("gain_bias") = 1.0)
         .def("get_layer_info", &BatchNorm2d::get_layer_info)
         .def("get_layer_name", &BatchNorm2d::get_layer_name)
         .def("forward", &BatchNorm2d::forward)

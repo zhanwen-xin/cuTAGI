@@ -1,12 +1,3 @@
-///////////////////////////////////////////////////////////////////////////////
-// File:         common.h
-// Description:  Header file for common.h
-// Authors:      Luong-Ha Nguyen & James-A. Goulet
-// Created:      January 15, 2022
-// Updated:      April 12, 2022
-// Contact:      luongha.nguyen@gmail.com & james.goulet@polymtl.ca
-// License:      This code is released under the MIT License.
-///////////////////////////////////////////////////////////////////////////////
 #pragma once
 #include <cmath>
 #include <fstream>
@@ -25,6 +16,8 @@
 #include <limits.h>
 #include <sys/stat.h>
 #include <sys/types.h>
+
+#include "param_init.h"
 
 template <typename T>
 void print_matrix(std::vector<T> &M, int w, int h)
@@ -285,3 +278,23 @@ float normpdf_cpu(float x, float mu, float sigma);
 // INDEX
 ///////////////////////////////////////////////////////
 int get_sub_layer_idx(std::vector<int> &layer, int curr_layer, int layer_label);
+
+///////////////////////////////////////////////////////
+// SEED MANAGER
+///////////////////////////////////////////////////////
+void manual_seed(int seed);
+
+std::mt19937 &get_random_engine();
+
+///////////////////////////////////////////////////////
+// CHECK CUDA
+///////////////////////////////////////////////////////
+bool is_cuda_available();
+
+///////////////////////////////////////////////////////
+// NORM LAYER
+///////////////////////////////////////////////////////
+void delta_param_sum(const std::vector<float> &delta_mu_e,
+                     const std::vector<float> &delta_var_e, int wihi, int fi,
+                     int batch_size, std::vector<float> &delta_mu,
+                     std::vector<float> &delta_var);

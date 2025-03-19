@@ -1,14 +1,3 @@
-
-///////////////////////////////////////////////////////////////////////////////
-// File:         main_bindings.h
-// Description:  ...
-// Authors:      Luong-Ha Nguyen & James-A. Goulet
-// Created:      December 30, 2023
-// Updated:      August 19, 2024
-// Contact:      luongha.nguyen@gmail.com & james.goulet@polymtl.ca
-// License:      This code is released under the MIT License.
-////////////////////////////////////////////////////////////////////////////////
-
 #include "../include/bindings/main_bindings.h"
 
 PYBIND11_MODULE(cutagi, modo) {
@@ -34,6 +23,7 @@ PYBIND11_MODULE(cutagi, modo) {
     bind_conv2d_layer(modo);
     bind_convtranspose2d_layer(modo);
     bind_avgpool2d_layer(modo);
+    bind_maxpool2d_layer(modo);
     bind_layernorm_layer(modo);
     bind_batchnorm_layer(modo);
     bind_lstm_layer(modo);
@@ -43,4 +33,6 @@ PYBIND11_MODULE(cutagi, modo) {
     bind_sequential(modo);
     bind_output_updater(modo);
     bind_utils(modo);
+    bind_manual_seed(modo);
+    bind_is_cuda_available(modo);
 }

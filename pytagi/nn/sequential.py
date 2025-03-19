@@ -155,6 +155,10 @@ class Sequential:
         """Perform a step of inference."""
         self._cpp_backend.step()
 
+    def reset_lstm_states(self):
+        """Reset lstm states"""
+        self._cpp_backend.reset_lstm_states()
+
     def output_to_host(self) -> List[float]:
         """Copy the output data to the host."""
         return self._cpp_backend.output_to_host()
@@ -170,6 +174,10 @@ class Sequential:
     def preinit_layer(self):
         """Preinitialize the layer."""
         self._cpp_backend.preinit_layer()
+
+    def get_neg_var_w_counter(self) -> dict:
+        """Get the number of negative variance weights."""
+        return self._cpp_backend.get_neg_var_w_counter()
 
     def save(self, filename: str):
         """Save the model to a file."""
@@ -188,19 +196,17 @@ class Sequential:
         self._cpp_backend.load_csv(filename)
 
     def parameters(self) -> List[np.ndarray]:
-        """Get the model parameters. Stored mu_w, var_w, mu_b, var_b in list of
-        numpy arrays. Example: A model of 5 layers leads to a params size of
-        5 * 4 = 20
-        """
+        """Get the model parameters. Stored tuple (mu_w, var_w, mu_b, var_b) in a list"""
         return self._cpp_backend.parameters()
 
     def load_state_dict(self, state_dict: dict):
         """Load the model parameters from a state dict."""
         self._cpp_backend.load_state_dict(state_dict)
 
-    def get_state_dict(self) -> dict:
-        """Get the model parameters as a state dict."""
-        return self._cpp_backend.get_state_dict()
+    def state_dict(self) -> dict:
+        """Get the model parameters as a state dict where key is the layer name
+        and value is a tuple of 4 arrays (mu_w, var_w, mu_b, var_b)"""
+        return self._cpp_backend.state_dict()
 
     def params_from(self, other: "Sequential"):
         """Copy parameters from another model."""
@@ -215,3 +221,16 @@ class Sequential:
     def get_input_states(self) -> Tuple[np.ndarray, np.ndarray]:
         """Get the input states."""
         return self._cpp_backend.get_input_states()
+
+    def get_norm_mean_var(self) -> dict:
+        """Get the mean and variance of the normalization layer.
+        Returns:
+            A dictionary containing the mean and variance of the normalization layer.
+            each key is the layer name and the value is a tuple of 4 arrays:
+            mu_batch: mean of the batch
+            var_batch: variance of the batch
+            mu_ema_batch: mean of the exponential moving average (ema) of the batch
+            var_ema_batch: variance of the ema of the batch
+
+        """
+        return self._cpp_backend.get_norm_mean_var()

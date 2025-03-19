@@ -105,6 +105,7 @@ def main(num_epochs: int = 50, batch_size: int = 5, sigma_v: float = 1):
             mse = metric.mse(pred, obs)
             mses.append(mse)
 
+        net.reset_lstm_states()
         # Progress bar
         pbar.set_description(
             f"Epoch {epoch + 1}/{num_epochs}| mse: {sum(mses)/len(mses):>7.2f}",

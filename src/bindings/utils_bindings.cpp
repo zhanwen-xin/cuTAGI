@@ -1,14 +1,3 @@
-
-///////////////////////////////////////////////////////////////////////////////
-// File:         utils_bindings.cpp
-// Description:  API for Python bindings of C++/CUDA
-// Authors:      Luong-Ha Nguyen & James-A. Goulet
-// Created:      March 31, 2024
-// Updated:      April 04, 2024
-// Contact:      luongha.nguyen@gmail.com & james.goulet@polymtl.ca
-// License:      This code is released under the MIT License.
-///////////////////////////////////////////////////////////////////////////////
-
 #include "../include/bindings/utils_bindings.h"
 
 Utils::Utils() {};
@@ -169,4 +158,12 @@ void bind_utils(pybind11::module_ &m) {
              &Utils::create_rolling_window_wrapper)
         .def("get_name", &Utils::get_name)
         .def("get_upper_triu_cov_wrapper", &Utils::get_upper_triu_cov_wrapper);
+}
+
+void bind_manual_seed(pybind11::module_ &m) {
+    m.def("manual_seed", &manual_seed);
+}
+
+void bind_is_cuda_available(pybind11::module_ &m) {
+    m.def("is_cuda_available", &is_cuda_available);
 }

@@ -1,13 +1,3 @@
-///////////////////////////////////////////////////////////////////////////////
-// File:         base_layer_cuda.cuh
-// Description:  ...
-// Authors:      Luong-Ha Nguyen & James-A. Goulet
-// Created:      December 13, 2023
-// Updated:      April 08, 2024
-// Contact:      luongha.nguyen@gmail.com & james.goulet@polymtl.ca
-// License:      This code is released under the MIT License.
-////////////////////////////////////////////////////////////////////////////////
-
 #include "../include/base_layer_cuda.cuh"
 #include "../include/config.h"
 #include "../include/cuda_error_checking.cuh"
@@ -66,7 +56,8 @@ __global__ void device_raw_bias_update(float const *delta_mu_b,
 __global__ void device_weight_update(float const *delta_mu_w,
                                      float const *delta_var_w,
                                      float cap_factor_udapte, size_t size,
-                                     float *mu_w, float *var_w)
+                                     float *mu_w, float *var_w,
+                                     int *negative_var_count)
 /*
  */
 {
@@ -83,7 +74,7 @@ __global__ void device_weight_update(float const *delta_mu_w,
         var_w[col] += delta_var_sign * min(sqrt(tmp_var * tmp_var), delta_bar);
         if (var_w[col] <= 0.0f) {
             var_w[col] = 1E-5f;
-            //printf("w"); //Constrain printout for debugging
+            atomicAdd(negative_var_count, 1);
         }
     }
 }
@@ -106,7 +97,7 @@ __global__ void device_bias_update(float const *delta_mu_b,
         var_b[col] += delta_var_sign * min(fabsf(delta_var_b[col]), delta_bar);
         if (var_b[col] <= 0.0f) {
             var_b[col] = 1E-5f;
-            //printf("b"); //Constrain printout for debugging
+            // printf("b"); //Constrain printout for debugging
         }
     }
 }
@@ -130,6 +121,7 @@ BaseLayerCuda::~BaseLayerCuda()
     cudaFree(d_delta_var_w);
     cudaFree(d_delta_mu_b);
     cudaFree(d_delta_var_b);
+    cudaFree(d_neg_var_count);
 }
 
 void BaseLayerCuda::allocate_param_delta()
@@ -194,14 +186,28 @@ void BaseLayerCuda::update_weights()
 /*
  */
 {
-    // TODO: replace with capped update version
     unsigned int num_add_threads = 256;
     unsigned int blocks =
         (this->num_weights + num_add_threads - 1) / num_add_threads;
 
+    this->neg_var_w_counter = 0;
+    cudaError_t err =
+        cudaMemcpy(this->d_neg_var_count, &this->neg_var_w_counter, sizeof(int),
+                   cudaMemcpyHostToDevice);
+    if (err != cudaSuccess) {
+        throw std::runtime_error("Failed to copy negative var count to device");
+    }
+
     device_weight_update<<<blocks, num_add_threads>>>(
         this->d_delta_mu_w, this->d_delta_var_w, this->cap_factor_update,
-        this->num_weights, this->d_mu_w, this->d_var_w);
+        this->num_weights, this->d_mu_w, this->d_var_w, this->d_neg_var_count);
+
+    err = cudaMemcpy(&this->neg_var_w_counter, this->d_neg_var_count,
+                     sizeof(int), cudaMemcpyDeviceToHost);
+    if (err != cudaSuccess) {
+        throw std::runtime_error(
+            "Failed to copy negative var count from device");
+    }
 }
 
 void BaseLayerCuda::update_biases()
@@ -242,6 +248,8 @@ void BaseLayerCuda::allocate_param_memory()
         cudaMalloc((void **)&this->d_mu_b, num_b * sizeof(float));
         cudaMalloc((void **)&this->d_var_b, num_b * sizeof(float));
     }
+
+    cudaMalloc((void **)&this->d_neg_var_count, sizeof(int));
 
     CHECK_LAST_CUDA_ERROR();
 }
@@ -374,6 +382,55 @@ void BaseLayerCuda::load(std::ifstream &file)
     this->params_to_device();
 }
 
+ParameterMap BaseLayerCuda::get_parameters_as_map(std::string suffix) {
+    // Send data to host
+    this->params_to_host();
+
+    std::string key = this->get_layer_name();
+    if (!suffix.empty()) {
+        key += "." + suffix;
+    }
+
+    ParameterTuple parameters =
+        std::make_tuple(this->mu_w, this->var_w, this->mu_b, this->var_b);
+
+    return {{key, parameters}};
+}
+
+void BaseLayerCuda::load_parameters_from_map(const ParameterMap &param_map,
+                                             const std::string &suffix) {
+    // Generate the key for this layer
+    std::string key = this->get_layer_name();
+    if (!suffix.empty()) {
+        key += "." + suffix;
+    }
+
+    // Find the key in the provided map
+    auto it = param_map.find(key);
+    if (it == param_map.end()) {
+        LOG(LogLevel::ERROR, "Key " + key + " not found in parameter map.");
+    }
+
+    // Extract the parameters from the map
+    const auto &params = it->second;
+    if (!std::is_same<std::decay_t<decltype(params)>, ParameterTuple>::value) {
+        LOG(LogLevel::ERROR, "Parameter tuple for key " + key +
+                                 " must contain exactly 4 vectors.");
+    }
+
+    this->mu_w = std::get<0>(params);
+    this->var_w = std::get<1>(params);
+    this->mu_b = std::get<2>(params);
+    this->var_b = std::get<3>(params);
+
+    this->params_to_device();
+}
+
+std::vector<ParameterTuple> BaseLayerCuda::parameters() {
+    this->params_to_host();
+    return {{this->mu_w, this->var_w, this->mu_b, this->var_b}};
+}
+
 std::unique_ptr<BaseLayer> BaseLayerCuda::to_host() {
     throw std::runtime_error("Error in file: " + std::string(__FILE__) +
                              " at line: " + std::to_string(__LINE__) +
@@ -411,4 +468,15 @@ void BaseLayerCuda::store_states_for_training_cuda(
 
     fill_output_states_on_device<<<out_blocks, THREADS>>>(out_size,
                                                           output_states.d_jcb);
+}
+
+void BaseLayerCuda::copy_params_from(const BaseLayer &source) {
+    this->allocate_param_memory();
+
+    this->mu_w = source.mu_w;
+    this->var_w = source.var_w;
+    this->mu_b = source.mu_b;
+    this->var_b = source.var_b;
+
+    this->params_to_device();
 }

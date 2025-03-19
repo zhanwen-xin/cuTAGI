@@ -1,12 +1,3 @@
-///////////////////////////////////////////////////////////////////////////////
-// File:         utils_bindings.h
-// Description:  API for Python bindings of C++/CUDA
-// Authors:      Luong-Ha Nguyen & James-A. Goulet
-// Created:      March 31, 2024
-// Updated:      April 04, 2024
-// Contact:      luongha.nguyen@gmail.com & james.goulet@polymtl.ca
-// License:      This code is released under the MIT License.
-///////////////////////////////////////////////////////////////////////////////
 #pragma once
 #include <pybind11/numpy.h>
 #include <pybind11/pybind11.h>
@@ -24,7 +15,7 @@ class Utils {
    public:
     Utils();
     ~Utils();
-    std::string get_name() { return "fuck"; }
+    std::string get_name() { return "Utils"; }
     std::tuple<std::vector<float>, std::vector<int>, int> label_to_obs_wrapper(
         std::vector<int> &labels, int num_classes);
 
@@ -63,3 +54,5 @@ class Utils {
 };
 
 void bind_utils(pybind11::module_ &modo);
+void bind_manual_seed(pybind11::module_ &modo);
+void bind_is_cuda_available(pybind11::module_ &modo);

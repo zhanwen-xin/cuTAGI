@@ -1,21 +1,16 @@
-///////////////////////////////////////////////////////////////////////////////
-// File:         sequential.cpp
-// Description:  ...
-// Authors:      Luong-Ha Nguyen & James-A. Goulet
-// Created:      October 09, 2023
-// Updated:      July 19, 2024
-// Contact:      luongha.nguyen@gmail.com & james.goulet@polymtl.ca
-// License:      This code is released under the MIT License.
-////////////////////////////////////////////////////////////////////////////////
 
 #include "../include/sequential.h"
 
+#include "../include/batchnorm_layer.h"
 #include "../include/config.h"
 #include "../include/conv2d_layer.h"
+#include "../include/custom_logger.h"
 #include "../include/pooling_layer.h"
-// #include "slinear_layer.h"
+#include "../include/resnet_block.h"
 #ifdef USE_CUDA
 #include "../include/base_layer_cuda.cuh"
+#include "../include/batchnorm_layer_cuda.cuh"
+#include "../include/resnet_block_cuda.cuh"
 #endif
 #include <memory>
 
@@ -91,9 +86,7 @@ it will be corrected at the first run in the forward pass.
     } else if (this->device.compare("cuda") == 0) {
         this->layers.push_back(layer->to_cuda());
     } else {
-        throw std::invalid_argument("Error in file: " + std::string(__FILE__) +
-                                    " at line: " + std::to_string(__LINE__) +
-                                    ". Invalid device: [" + this->device + "]");
+        LOG(LogLevel::ERROR, "Invalid device: [" + this->device + "]");
     }
 }
 
@@ -164,17 +157,12 @@ void Sequential::init_output_state_buffer()
             this->temp_states = std::make_shared<TempStateCuda>(
                 this->z_buffer_size, this->z_buffer_block_size);
         } else {
-            throw std::invalid_argument(
-                "Error in file: " + std::string(__FILE__) +
-                " at line: " + std::to_string(__LINE__) +
-                ". Smoothing feature does not support CUDA");
+            LOG(LogLevel::ERROR, "Smoothing feature does not support CUDA");
         }
     }
 #endif
     else {
-        throw std::invalid_argument("Error in file: " + std::string(__FILE__) +
-                                    " at line: " + std::to_string(__LINE__) +
-                                    ". Invalid device: [" + this->device + "]");
+        LOG(LogLevel::ERROR, "Invalid device: [" + this->device + "]");
     }
 }
 
@@ -197,9 +185,7 @@ void Sequential::init_delta_state_buffer()
     }
 #endif
     else {
-        throw std::invalid_argument("Error in file: " + std::string(__FILE__) +
-                                    " at line: " + std::to_string(__LINE__) +
-                                    ". Invalid device: [" + this->device + "]");
+        LOG(LogLevel::ERROR, "Invalid device: [" + this->device + "]");
     }
 }
 
@@ -249,8 +235,15 @@ void Sequential::forward(const std::vector<float> &mu_x,
 /*
  */
 {
-    // Batch size
-    int batch_size = mu_x.size() / this->layers.front()->get_input_size();
+    // Batch size: TODO: this is only correct if input size is correctly set
+    int input_size = this->layers.front()->get_input_size();
+    if (mu_x.size() % input_size != 0) {
+        std::string message =
+            "Input size mismatch: " + std::to_string(input_size) + " vs " +
+            std::to_string(mu_x.size());
+        LOG(LogLevel::ERROR, message);
+    }
+    int batch_size = mu_x.size() / input_size;
 
     // Lazy initialization
     if (this->z_buffer_block_size == 0) {
@@ -402,6 +395,21 @@ void Sequential::step()
     }
 }
 
+void Sequential::reset_lstm_states()
+/*
+ */
+{
+    // Hidden layers
+    for (auto layer = this->layers.begin(); layer != this->layers.end();
+         layer++) {
+        auto *current_layer = layer->get();
+        if (current_layer->get_layer_type() == LayerType::LSTM) {
+            auto *lstm_layer = dynamic_cast<LSTM *>(current_layer);
+            lstm_layer->lstm_states.reset_zeros();
+        }
+    }
+}
+
 void Sequential::output_to_host() {
 #ifdef USE_CUDA
     if (this->device.compare("cuda") == 0) {
@@ -424,6 +432,44 @@ void Sequential::delta_z_to_host() {
         cu_output_delta_z->to_host();
     }
 #endif
+}
+
+std::unordered_map<std::string, int> Sequential::get_neg_var_w_counter() {
+    std::unordered_map<std::string, int> counter;
+    for (const auto &layer : this->layers) {
+        counter[layer->get_layer_info()] = layer->get_neg_var_w_counter();
+    }
+    return counter;
+}
+std::unordered_map<std::string, std::tuple<std::vector<std::vector<float>>,
+                                           std::vector<std::vector<float>>,
+                                           std::vector<std::vector<float>>,
+                                           std::vector<std::vector<float>>>>
+Sequential::get_norm_mean_var()
+/*
+ */
+{
+    // Define dictionary to store the mean and variance of each layer
+    std::unordered_map<std::string, std::tuple<std::vector<std::vector<float>>,
+                                               std::vector<std::vector<float>>,
+                                               std::vector<std::vector<float>>,
+                                               std::vector<std::vector<float>>>>
+        norm_mean_var;
+    for (int i = 0; i < this->layers.size(); i++) {
+        auto layer = this->layers[i];
+        std::string layer_name =
+            layer->get_layer_info() + "_" + std::to_string(i);
+
+        std::vector<std::vector<float>> mu_ra, var_ra, mu_norm, var_norm;
+        std::tie(mu_ra, var_ra, mu_norm, var_norm) = layer->get_norm_mean_var();
+        // check if the mu_ra is empty
+        if (mu_ra.empty()) {
+            continue;
+        }
+        norm_mean_var[layer_name] =
+            std::make_tuple(mu_ra, var_ra, mu_norm, var_norm);
+    }
+    return norm_mean_var;
 }
 
 // Utility function to get layer stack info
@@ -454,9 +500,8 @@ void Sequential::save(const std::string &filename)
 
     std::ofstream file(filename, std::ios::binary);
     if (!file.is_open()) {
-        throw std::runtime_error("Error in file: " + std::string(__FILE__) +
-                                 " at line: " + std::to_string(__LINE__) +
-                                 ". Failed to open file for saving");
+        LOG(LogLevel::ERROR, "Failed to open file for saving");
+        return;
     }
 
     for (const auto &layer : layers) {
@@ -474,9 +519,8 @@ void Sequential::load(const std::string &filename)
 
     std::ifstream file(filename, std::ios::binary);
     if (!file.is_open()) {
-        throw std::runtime_error("Error in file: " + std::string(__FILE__) +
-                                 " at line: " + std::to_string(__LINE__) +
-                                 ". Failed to open file for loading");
+        LOG(LogLevel::ERROR, "Failed to open file for loading");
+        return;
     }
 
     for (auto &layer : layers) {
@@ -584,115 +628,45 @@ void Sequential::load_csv(const std::string &filename)
     }
 }
 
-std::vector<std::reference_wrapper<std::vector<float>>> Sequential::parameters()
-/*Stored mu_w, var_w, mu_b, var_b in a vector of reference_wrapper
-Example: A model of 5 layers leads to a params size of 5 * 4 = 20
- */
-{
-    if (!this->valid_) {
-        throw std::runtime_error("Sequential object is no longer valid");
-    }
-    std::vector<std::reference_wrapper<std::vector<float>>> params;
+std::vector<ParameterTuple> Sequential::parameters() {
+    std::vector<ParameterTuple> params;
     for (auto &layer : layers) {
         if (layer->get_layer_type() != LayerType::Activation &&
             layer->get_layer_type() != LayerType::Pool2d) {
-            params.push_back(layer->mu_w);
-            params.push_back(layer->var_w);
-            params.push_back(layer->mu_b);
-            params.push_back(layer->var_b);
+            auto layer_params = layer->parameters();
+            params.insert(params.end(), layer_params.begin(),
+                          layer_params.end());
         }
     }
     return params;
 }
 
-std::map<std::string, std::tuple<std::vector<float>, std::vector<float>,
-                                 std::vector<float>, std::vector<float>>>
-Sequential::get_state_dict()
-/*
- */
-{
-    // Send the parameters to the host. TODO: for further speedup, we must to
-    // avoid this step. One could use the copy data in gpu memory directly or
-    // unified memory
-    if (this->device.compare("cuda") == 0) {
-        this->params_to_host();
-    }
-
-    std::map<std::string, std::tuple<std::vector<float>, std::vector<float>,
-                                     std::vector<float>, std::vector<float>>>
-        state_dict;
-
-    for (size_t i = 0; i < this->layers.size(); ++i) {
+ParameterMap Sequential::state_dict() {
+    ParameterMap state_dict;
+    for (size_t i = 0; i < layers.size(); ++i) {
         const auto &layer = this->layers[i];
         if (layer->get_layer_type() != LayerType::Activation &&
             layer->get_layer_type() != LayerType::Pool2d) {
-            std::string layer_name =
-                layer->get_layer_info() + "_" + std::to_string(i);
-            state_dict[layer_name] = std::make_tuple(layer->mu_w, layer->var_w,
-                                                     layer->mu_b, layer->var_b);
+            auto params = layer->get_parameters_as_map(std::to_string(i));
+            state_dict.insert(params.begin(), params.end());
         }
     }
     return state_dict;
 }
 
-void Sequential::load_state_dict(
-    const std::map<std::string,
-                   std::tuple<std::vector<float>, std::vector<float>,
-                              std::vector<float>, std::vector<float>>>
-        &state_dict)
-/*
- */
-{
+void Sequential::load_state_dict(const ParameterMap &state_dict) {
     for (size_t i = 0; i < layers.size(); ++i) {
         const auto &layer = this->layers[i];
-
         if (layer->get_layer_type() != LayerType::Activation &&
             layer->get_layer_type() != LayerType::Pool2d) {
-            std::string layer_name =
-                layer->get_layer_info() + "_" + std::to_string(i);
-
-            auto it = state_dict.find(layer_name);
-            if (it == state_dict.end()) {
-                throw std::runtime_error(
-                    "Error in file: " + std::string(__FILE__) +
-                    " at line: " + std::to_string(__LINE__) +
-                    "Missing parameters for " + layer_name);
-            }
-
-            const auto &layer_params = it->second;
-
-            // Check if the sizes match
-            if (layer->mu_w.size() == std::get<0>(layer_params).size() &&
-                layer->var_w.size() == std::get<1>(layer_params).size() &&
-                layer->mu_b.size() == std::get<2>(layer_params).size() &&
-                layer->var_b.size() == std::get<3>(layer_params).size()) {
-                // Update layer parameters
-                layer->mu_w = std::get<0>(layer_params);
-                layer->var_w = std::get<1>(layer_params);
-                layer->mu_b = std::get<2>(layer_params);
-                layer->var_b = std::get<3>(layer_params);
-            } else {
-                throw std::runtime_error(
-                    "Error in file: " + std::string(__FILE__) +
-                    " at line: " + std::to_string(__LINE__) +
-                    "Mismatch in layer sizes for " + layer_name);
-            }
+            layer->load_parameters_from_map(state_dict, std::to_string(i));
         }
-    }
-
-    // Send the parameters to the device. TODO: for further speedup, we must to
-    // avoid this step. One could use the copy data in gpu memory directly or
-    // unified memory
-    if (this->device.compare("cuda") == 0) {
-        this->params_to_device();
     }
 }
 
 void Sequential::params_from(const Sequential &model_ref) {
     if (this->layers.size() != model_ref.layers.size()) {
-        throw std::invalid_argument("Error in file: " + std::string(__FILE__) +
-                                    " at line: " + std::to_string(__LINE__) +
-                                    ". Model architecture is different");
+        LOG(LogLevel::ERROR, "Model architecture is different.");
     }
 
     // TODO: need to add more checks before copying
@@ -780,9 +754,7 @@ std::tuple<pybind11::array_t<float>, pybind11::array_t<float>>
 Sequential::get_input_states() {
     // Check if input_state_update is enabled
     if (!this->input_state_update) {
-        throw std::invalid_argument("Error in file: " + std::string(__FILE__) +
-                                    " at line: " + std::to_string(__LINE__) +
-                                    ". input_state_update is set to False");
+        LOG(LogLevel::ERROR, "input_state_update is set to False.");
     }
 
 #ifdef USE_CUDA

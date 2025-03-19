@@ -5,8 +5,9 @@ import subprocess
 import sys
 import io
 
-from setuptools import Extension, setup, find_packages
+from setuptools import Extension, setup
 from setuptools.command.build_ext import build_ext
+from setuptools import setup, find_packages
 
 ROOT_DIR = os.path.dirname(os.path.realpath(__file__))
 

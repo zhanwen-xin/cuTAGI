@@ -1,5 +1,6 @@
 #include <cuda.h>
 
+#include "../include/custom_logger.h"
 #include "../include/resnet_block.h"
 #include "../include/resnet_block_cuda.cuh"
 
@@ -191,9 +192,7 @@ void ResNetBlockCuda::set_cuda_threads(int num)
         if (layer_block) {
             layer_block->set_cuda_threads(num);
         } else {
-            throw std::invalid_argument(
-                "Error in file: " + std::string(__FILE__) + " at line: " +
-                std::to_string(__LINE__) + ". Set cuda threads.");
+            LOG(LogLevel::ERROR, "Set cuda threads.");
         }
     }
 
@@ -203,9 +202,7 @@ void ResNetBlockCuda::set_cuda_threads(int num)
         if (cu_shortcut) {
             cu_shortcut->set_cuda_threads(num);
         } else {
-            throw std::invalid_argument(
-                "Error in file: " + std::string(__FILE__) + " at line: " +
-                std::to_string(__LINE__) + ". Set cuda threads.");
+            LOG(LogLevel::ERROR, "Set cuda threads.");
         }
     }
 }
@@ -387,6 +384,38 @@ void ResNetBlockCuda::load(std::ifstream &file)
     }
 }
 
+ParameterMap ResNetBlockCuda::get_parameters_as_map(std::string suffix) {
+    std::string main_suffix = "main." + suffix;
+    ParameterMap params = this->main_block->get_parameters_as_map(main_suffix);
+    if (this->shortcut != nullptr) {
+        std::string shortcut_suffix = "shortcut." + suffix;
+        auto shortcut_params =
+            this->shortcut->get_parameters_as_map(shortcut_suffix);
+        params.insert(shortcut_params.begin(), shortcut_params.end());
+    }
+    return params;
+}
+
+void ResNetBlockCuda::load_parameters_from_map(const ParameterMap &param_map,
+                                               const std::string &suffix) {
+    std::string main_suffix = "main." + suffix;
+    this->main_block->load_parameters_from_map(param_map, main_suffix);
+    if (this->shortcut != nullptr) {
+        std::string shortcut_suffix = "shortcut." + suffix;
+        this->shortcut->load_parameters_from_map(param_map, shortcut_suffix);
+    }
+}
+
+std::vector<ParameterTuple> ResNetBlockCuda::parameters() {
+    std::vector<ParameterTuple> params = this->main_block->parameters();
+    if (this->shortcut != nullptr) {
+        auto shortcut_params = this->shortcut->parameters();
+        params.insert(params.end(), shortcut_params.begin(),
+                      shortcut_params.end());
+    }
+    return params;
+}
+
 std::unique_ptr<BaseLayer> ResNetBlockCuda::to_host()
 /* Transfer to cpu version
  */
@@ -402,4 +431,27 @@ void ResNetBlockCuda::preinit_layer() {
     if (this->shortcut != nullptr) {
         this->shortcut->preinit_layer();
     }
+}
+
+// DEBUG
+std::tuple<std::vector<std::vector<float>>, std::vector<std::vector<float>>,
+           std::vector<std::vector<float>>, std::vector<std::vector<float>>>
+ResNetBlockCuda::get_norm_mean_var() {
+    std::vector<std::vector<float>> mu_ras, var_ras, mu_norms, var_norms;
+    std::tie(mu_ras, var_ras, mu_norms, var_norms) =
+        this->main_block->get_norm_mean_var();
+
+    if (this->shortcut != nullptr) {
+        std::vector<std::vector<float>> mu_ra, var_ra, mu_norm, var_norm;
+        std::tie(mu_ra, var_ra, mu_norm, var_norm) =
+            this->shortcut->get_norm_mean_var();
+        for (size_t i = 0; i < mu_ra.size(); i++) {
+            mu_ras.push_back(mu_ra[i]);
+            var_ras.push_back(var_ra[i]);
+            mu_norms.push_back(mu_norm[i]);
+            var_norms.push_back(var_norm[i]);
+        }
+    }
+
+    return {mu_ras, var_ras, mu_norms, var_norms};
 }

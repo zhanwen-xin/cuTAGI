@@ -14,9 +14,12 @@ dist
 
 # folders
 data/cifar
-data/mnist/MNIST
+data/mnist/
 data/traffic
+data/imagenet
 test_model/
+wandb/
+saved_results/param_viz
 
 # VSCode
 .vscode
